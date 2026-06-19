@@ -1,0 +1,22 @@
+services:
+  postgres:
+    build: .
+    container_name: podcast-rag-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-podcast_rag}
+      POSTGRES_USER: ${POSTGRES_USER:-podcast_rag}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-podcast_rag}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./db/migrations:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:
