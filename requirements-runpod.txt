@@ -5,5 +5,4 @@ matplotlib
 soundfile
 faster-whisper==1.1.1
 pyannote.audio==3.3.2
-torchcodec
 runpod
