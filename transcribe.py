@@ -72,6 +72,64 @@ def resolve_torch_device(device: str) -> str:
     return "cuda" if torch.cuda.is_available() else "cpu"
 
 
+def log_acceleration_status(transcribe_device: str, diarization_device: str) -> None:
+    wants_cuda = "cuda" in {transcribe_device.strip().lower(), diarization_device.strip().lower()}
+    log(
+        "Acceleration config "
+        f"transcribe_device='{transcribe_device}' diarization_device='{diarization_device}' "
+        f"CUDA_VISIBLE_DEVICES='{os.getenv('CUDA_VISIBLE_DEVICES', '')}'"
+    )
+    if not wants_cuda:
+        return
+
+    try:
+        import torch
+
+        log(
+            "Torch CUDA status "
+            f"torch='{torch.__version__}' available={torch.cuda.is_available()} "
+            f"device_count={torch.cuda.device_count()}"
+        )
+        for device_index in range(torch.cuda.device_count()):
+            log(f"Torch CUDA device {device_index}: {torch.cuda.get_device_name(device_index)}")
+        if not torch.cuda.is_available():
+            raise RuntimeError("CUDA was requested, but torch.cuda.is_available() is false")
+    except Exception as error:
+        log(f"Torch CUDA preflight failed: {error}")
+        raise
+
+    try:
+        import ctranslate2
+
+        cuda_device_count = getattr(ctranslate2, "get_cuda_device_count", lambda: "unknown")()
+        supported_compute_types = ctranslate2.get_supported_compute_types("cuda")
+        log(
+            "CTranslate2 CUDA status "
+            f"ctranslate2='{ctranslate2.__version__}' cuda_device_count={cuda_device_count} "
+            f"supported_compute_types={sorted(supported_compute_types)}"
+        )
+        if cuda_device_count == 0:
+            raise RuntimeError("CUDA was requested, but CTranslate2 sees 0 CUDA devices")
+    except Exception as error:
+        log(f"CTranslate2 CUDA preflight failed: {error}")
+        raise
+
+    try:
+        result = subprocess.run(
+            [
+                "nvidia-smi",
+                "--query-gpu=name,utilization.gpu,memory.used,memory.total",
+                "--format=csv,noheader,nounits",
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        log(f"nvidia-smi: {result.stdout.strip()}")
+    except Exception as error:
+        log(f"nvidia-smi unavailable: {error}")
+
+
 def start_heartbeat(label: str, interval_seconds: int) -> tuple[threading.Event, threading.Thread | None]:
     stop_event = threading.Event()
     if interval_seconds <= 0:
@@ -533,6 +591,7 @@ def process_audio_url(audio_url: str, write_files: bool = True) -> tuple[dict[st
         f"diarization_enabled={diarization_enabled} "
         f"speaker_name_resolution_enabled={speaker_name_resolution_enabled}"
     )
+    log_acceleration_status(device, diarization_device)
 
     try:
         download_audio(audio_url, audio_path)
