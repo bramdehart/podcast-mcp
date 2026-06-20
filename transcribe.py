@@ -9,6 +9,7 @@ import subprocess
 import sys
 import threading
 import time
+import warnings
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -16,6 +17,11 @@ from dotenv import load_dotenv
 
 
 os.environ.setdefault("MPLCONFIGDIR", "/tmp/matplotlib")
+warnings.filterwarnings(
+    "ignore",
+    message="The 'backend' parameter is not used by TorchCodec AudioDecoder.*",
+    category=UserWarning,
+)
 
 TMP_DIR = Path("/tmp")
 USER_AGENT = "AppleCoreMedia"
@@ -353,7 +359,14 @@ def run_diarization(
 
     started_at = time.monotonic()
     log("Running speaker diarization")
-    diarization = pipeline(str(audio_path))
+    waveform_started_at = time.monotonic()
+    waveform_data, sample_rate = soundfile.read(str(audio_path), dtype="float32", always_2d=True)
+    waveform = torch.from_numpy(waveform_data.T)
+    log(
+        f"Loaded diarization waveform from WAV in {format_seconds(time.monotonic() - waveform_started_at)} "
+        f"shape={tuple(waveform.shape)} sample_rate={sample_rate}"
+    )
+    diarization = pipeline({"waveform": waveform, "sample_rate": sample_rate})
     turns = []
     for turn, _, speaker in diarization.itertracks(yield_label=True):
         start = float(turn.start)
