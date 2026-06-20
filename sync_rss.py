@@ -4,6 +4,7 @@ import subprocess
 import sys
 import xml.etree.ElementTree as ET
 from email.utils import parsedate_to_datetime
+from pathlib import Path
 
 import psycopg
 from dotenv import load_dotenv
@@ -11,6 +12,8 @@ from dotenv import load_dotenv
 
 DEFAULT_RSS_URL = "https://rss.beehiiv.com/podcasts/019d2587-e790-7b44-bb7a-6eebcaae225c.xml"
 USER_AGENT = "AppleCoreMedia"
+TRANSCRIBE_SCRIPT = Path(__file__).with_name("transcribe.py")
+RUNPOD_CLIENT_SCRIPT = Path(__file__).with_name("runpod_client.py")
 
 
 def fetch_rss_xml(url: str) -> bytes:
@@ -97,6 +100,18 @@ def get_indexed_audio_urls(database_url: str) -> set[str]:
             return {row[0] for row in cursor.fetchall()}
 
 
+def transcribe_episode(audio_url: str) -> None:
+    execution_mode = os.getenv("TRANSCRIBE_EXECUTION", "local").strip().lower()
+    if execution_mode == "runpod":
+        subprocess.run([sys.executable, str(RUNPOD_CLIENT_SCRIPT), audio_url], check=True)
+        return
+
+    if execution_mode != "local":
+        raise ValueError("TRANSCRIBE_EXECUTION must be 'local' or 'runpod'")
+
+    subprocess.run([sys.executable, str(TRANSCRIBE_SCRIPT), audio_url], check=True)
+
+
 def main() -> int:
     load_dotenv()
 
@@ -113,6 +128,8 @@ def main() -> int:
     for episode in rss_episodes:
         if episode["audio_url"] not in indexed_audio_urls:
             print(episode["title"])
+            transcribe_episode(str(episode["audio_url"]))
+            return 0
 
     return 0
 
