@@ -6,7 +6,7 @@ This setup moves the heavy audio processing to a RunPod Serverless worker:
 2. Transcribe with Faster Whisper.
 3. Optionally run pyannote diarization.
 4. Return transcript JSON to the local client.
-5. Optionally run speaker-name mapping locally via Ollama.
+5. Optionally run speaker-name mapping locally via the OpenAI API.
 6. The local client writes `/tmp/podcast_transcript_<hash>.json`.
 
 ## Local env
@@ -68,7 +68,7 @@ The RunPod image pins `torchcodec` to the PyTorch-compatible version. Mismatched
 RunPod cannot call back to your `localhost` directly: for RunPod, `localhost` means the worker container itself.
 This implementation therefore uses polling through the RunPod API. This also works while the rest of the app still runs locally.
 
-## Ollama
+## Speaker name mapping
 
 If `SPEAKER_NAME_RESOLUTION_ENABLED=true`, `runpod_client.py` runs speaker-name mapping locally after RunPod completes.
-This means `OLLAMA_BASE_URL=http://localhost:11434` can point to Ollama on your Mac.
+This uses the OpenAI API, so set `OPENAI_API_KEY` and `SPEAKER_NAME_MODEL` locally.

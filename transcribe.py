@@ -36,8 +36,7 @@ DEFAULT_DIARIZATION_DEVICE = "auto"
 DEFAULT_DIARIZATION_MIN_SPEAKERS = 2
 DEFAULT_DIARIZATION_MAX_SPEAKERS = 4
 DEFAULT_SPEAKER_NAME_RESOLUTION_ENABLED = False
-DEFAULT_SPEAKER_NAME_MODEL = "qwen2.5:7b-instruct"
-DEFAULT_OLLAMA_BASE_URL = "http://localhost:11434"
+DEFAULT_SPEAKER_NAME_MODEL = "gpt-5.4"
 DEFAULT_PROGRESS_HEARTBEAT_SECONDS = 60
 PROGRESS_LOG_INTERVAL_SECONDS = 300
 
@@ -491,9 +490,12 @@ def parse_json_object(value: str) -> dict[str, object]:
 def resolve_speaker_names(
     segments: list[dict[str, object]],
     model: str,
-    ollama_base_url: str,
 ) -> dict[str, dict[str, object]]:
     import requests
+
+    api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        raise RuntimeError("OPENAI_API_KEY is required when SPEAKER_NAME_RESOLUTION_ENABLED=true")
 
     speaker_ids = sorted({str(segment["speaker_id"]) for segment in segments if segment.get("speaker_id")})
     if not speaker_ids:
@@ -530,25 +532,40 @@ Return only JSON in this format:
 """.strip()
 
     started_at = time.monotonic()
-    log(f"Resolving speaker names with Ollama model '{model}'")
+    log(f"Resolving speaker names with OpenAI model '{model}'")
     response = requests.post(
-        f"{ollama_base_url.rstrip('/')}/api/chat",
+        "https://api.openai.com/v1/responses",
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        },
         json={
             "model": model,
-            "stream": False,
-            "format": "json",
-            "messages": [
+            "input": [
                 {
                     "role": "system",
                     "content": "You are careful in speaker identification. You return strict JSON only.",
                 },
                 {"role": "user", "content": prompt},
             ],
+            "text": {"format": {"type": "json_object"}},
         },
         timeout=120,
     )
     response.raise_for_status()
-    content = response.json()["message"]["content"]
+    response_payload = response.json()
+    content = response_payload.get("output_text")
+    if not content:
+        output_items = response_payload.get("output", [])
+        content_parts = []
+        for item in output_items:
+            for part in item.get("content", []) if isinstance(item, dict) else []:
+                if isinstance(part, dict) and part.get("type") in {"output_text", "text"}:
+                    content_parts.append(str(part.get("text", "")))
+        content = "".join(content_parts)
+    if not content:
+        raise ValueError("OpenAI response did not include output text")
+
     parsed = parse_json_object(content)
     mapping = {}
     for speaker_id in speaker_ids:
@@ -673,7 +690,6 @@ def process_audio_url(audio_url: str, write_files: bool = True) -> tuple[dict[st
         DEFAULT_SPEAKER_NAME_RESOLUTION_ENABLED,
     )
     speaker_name_model = os.getenv("SPEAKER_NAME_MODEL", DEFAULT_SPEAKER_NAME_MODEL)
-    ollama_base_url = os.getenv("OLLAMA_BASE_URL", DEFAULT_OLLAMA_BASE_URL)
     audio_path, transcript_path = tmp_paths(audio_url)
     wav_path = wav_path_for_audio(audio_url)
     diarization_path, speaker_mapping_path = metadata_paths(audio_url)
@@ -736,7 +752,7 @@ def process_audio_url(audio_url: str, write_files: bool = True) -> tuple[dict[st
 
         if diarization_enabled and speaker_name_resolution_enabled:
             speaker_mapping_started_at = time.monotonic()
-            speaker_mapping = resolve_speaker_names(segments, speaker_name_model, ollama_base_url)
+            speaker_mapping = resolve_speaker_names(segments, speaker_name_model)
             processing["speaker_name_resolution_seconds"] = round(time.monotonic() - speaker_mapping_started_at, 3)
             if write_files:
                 write_json(

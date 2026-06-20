@@ -10,7 +10,6 @@ import requests
 from dotenv import load_dotenv
 
 from transcribe import (
-    DEFAULT_OLLAMA_BASE_URL,
     DEFAULT_SPEAKER_NAME_MODEL,
     DEFAULT_SPEAKER_NAME_RESOLUTION_ENABLED,
     apply_speaker_mapping,
@@ -152,9 +151,8 @@ def resolve_speaker_names_locally(audio_url: str, transcript: dict[str, object])
         return transcript
 
     speaker_name_model = os.getenv("SPEAKER_NAME_MODEL", DEFAULT_SPEAKER_NAME_MODEL)
-    ollama_base_url = os.getenv("OLLAMA_BASE_URL", DEFAULT_OLLAMA_BASE_URL)
     try:
-        speaker_mapping = resolve_speaker_names(segments, speaker_name_model, ollama_base_url)
+        speaker_mapping = resolve_speaker_names(segments, speaker_name_model)
     except Exception as error:
         log(f"Speaker name resolution skipped: {error}")
         transcript["speaker_name_resolution_enabled"] = False
