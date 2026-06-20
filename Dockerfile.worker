@@ -17,7 +17,8 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements-runpod.txt .
-RUN pip install --no-cache-dir -r requirements-runpod.txt
+RUN python -m pip install --no-cache-dir -r requirements-runpod.txt
+RUN python -c "import torch; import torchaudio; import torchcodec; print('torch', torch.__version__); print('torchaudio', torchaudio.__version__); print('torchcodec import ok')"
 
 COPY transcribe.py runpod_worker.py ./
 
