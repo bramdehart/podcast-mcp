@@ -164,6 +164,11 @@ def tmp_paths(audio_url: str) -> tuple[Path, Path]:
     return audio_path, transcript_path
 
 
+def wav_path_for_audio(audio_url: str) -> Path:
+    audio_hash = hashlib.sha256(audio_url.encode("utf-8")).hexdigest()[:16]
+    return TMP_DIR / f"podcast_audio_{audio_hash}.wav"
+
+
 def metadata_paths(audio_url: str) -> tuple[Path, Path]:
     audio_hash = hashlib.sha256(audio_url.encode("utf-8")).hexdigest()[:16]
     diarization_path = TMP_DIR / f"podcast_diarization_{audio_hash}.json"
@@ -171,14 +176,45 @@ def metadata_paths(audio_url: str) -> tuple[Path, Path]:
     return diarization_path, speaker_mapping_path
 
 
-def download_audio(audio_url: str, audio_path: Path) -> None:
+def download_audio(audio_url: str, audio_path: Path) -> float:
     started_at = time.monotonic()
     log(f"Downloading audio to {audio_path}")
     subprocess.run(
         ["curl", "-fsSL", "-A", USER_AGENT, audio_url, "-o", str(audio_path)],
         check=True,
     )
-    log(f"Downloaded {audio_path.stat().st_size / 1024 / 1024:.1f} MB in {format_seconds(time.monotonic() - started_at)}")
+    elapsed_seconds = time.monotonic() - started_at
+    log(f"Downloaded {audio_path.stat().st_size / 1024 / 1024:.1f} MB in {format_seconds(elapsed_seconds)}")
+    return elapsed_seconds
+
+
+def convert_audio_to_wav(audio_path: Path, wav_path: Path) -> float:
+    started_at = time.monotonic()
+    log(f"Converting audio to 16kHz mono WAV at {wav_path}")
+    subprocess.run(
+        [
+            "ffmpeg",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-y",
+            "-i",
+            str(audio_path),
+            "-ac",
+            "1",
+            "-ar",
+            "16000",
+            "-vn",
+            str(wav_path),
+        ],
+        check=True,
+    )
+    elapsed_seconds = time.monotonic() - started_at
+    log(
+        f"Converted WAV {wav_path.stat().st_size / 1024 / 1024:.1f} MB "
+        f"in {format_seconds(elapsed_seconds)}"
+    )
+    return elapsed_seconds
 
 
 def number_value(value: object) -> float | None:
@@ -529,6 +565,7 @@ def build_transcript_payload(
     speaker_mapping: dict[str, dict[str, object]],
     segments: list[dict[str, object]],
     info: object,
+    processing: dict[str, float],
 ) -> dict[str, object]:
     info_get = info.get if isinstance(info, dict) else lambda key, default=None: getattr(info, key, default)
     return {
@@ -550,6 +587,7 @@ def build_transcript_payload(
         "detected_language": info_get("language"),
         "language_probability": info_get("language_probability"),
         "duration": info_get("duration"),
+        "processing": processing,
         "segments": segments,
     }
 
@@ -564,6 +602,7 @@ def write_transcript(transcript_path: Path, payload: dict[str, object]) -> None:
 
 
 def process_audio_url(audio_url: str, write_files: bool = True) -> tuple[dict[str, object], Path]:
+    total_started_at = time.monotonic()
     model_size = os.getenv("TRANSCRIBE_MODEL", DEFAULT_MODEL_SIZE)
     compute_type = os.getenv("TRANSCRIBE_COMPUTE_TYPE", DEFAULT_COMPUTE_TYPE)
     device = os.getenv("TRANSCRIBE_DEVICE", DEFAULT_DEVICE)
@@ -581,6 +620,7 @@ def process_audio_url(audio_url: str, write_files: bool = True) -> tuple[dict[st
     speaker_name_model = os.getenv("SPEAKER_NAME_MODEL", DEFAULT_SPEAKER_NAME_MODEL)
     ollama_base_url = os.getenv("OLLAMA_BASE_URL", DEFAULT_OLLAMA_BASE_URL)
     audio_path, transcript_path = tmp_paths(audio_url)
+    wav_path = wav_path_for_audio(audio_url)
     diarization_path, speaker_mapping_path = metadata_paths(audio_url)
     transcript_written = False
     log(
@@ -594,9 +634,12 @@ def process_audio_url(audio_url: str, write_files: bool = True) -> tuple[dict[st
     log_acceleration_status(device, diarization_device)
 
     try:
-        download_audio(audio_url, audio_path)
+        processing: dict[str, float] = {}
+        processing["download_seconds"] = round(download_audio(audio_url, audio_path), 3)
+        processing["audio_conversion_seconds"] = round(convert_audio_to_wav(audio_path, wav_path), 3)
+        transcription_started_at = time.monotonic()
         segments, info = transcribe_audio(
-            audio_path,
+            wav_path,
             model_size,
             compute_type,
             device,
@@ -605,11 +648,14 @@ def process_audio_url(audio_url: str, write_files: bool = True) -> tuple[dict[st
             heartbeat_seconds,
             language,
         )
+        processing["transcription_seconds"] = round(time.monotonic() - transcription_started_at, 3)
 
         diarization_turns = []
         speaker_mapping = {}
         if diarization_enabled:
-            diarization_turns = run_diarization(audio_path, diarization_model, diarization_device)
+            diarization_started_at = time.monotonic()
+            diarization_turns = run_diarization(wav_path, diarization_model, diarization_device)
+            processing["diarization_seconds"] = round(time.monotonic() - diarization_started_at, 3)
             if write_files:
                 write_json(
                     diarization_path,
@@ -624,7 +670,9 @@ def process_audio_url(audio_url: str, write_files: bool = True) -> tuple[dict[st
             segments = align_segments_with_speakers(segments, diarization_turns)
 
         if diarization_enabled and speaker_name_resolution_enabled:
+            speaker_mapping_started_at = time.monotonic()
             speaker_mapping = resolve_speaker_names(segments, speaker_name_model, ollama_base_url)
+            processing["speaker_name_resolution_seconds"] = round(time.monotonic() - speaker_mapping_started_at, 3)
             if write_files:
                 write_json(
                     speaker_mapping_path,
@@ -654,6 +702,7 @@ def process_audio_url(audio_url: str, write_files: bool = True) -> tuple[dict[st
             speaker_mapping,
             segments,
             info,
+            {**processing, "total_seconds": round(time.monotonic() - total_started_at, 3)},
         )
         if write_files:
             write_transcript(transcript_path, payload)
@@ -665,6 +714,9 @@ def process_audio_url(audio_url: str, write_files: bool = True) -> tuple[dict[st
         if transcript_written and audio_path.exists():
             audio_path.unlink()
             log(f"Removed audio file {audio_path}")
+        if transcript_written and wav_path.exists():
+            wav_path.unlink()
+            log(f"Removed WAV file {wav_path}")
 
     return payload, transcript_path
 
