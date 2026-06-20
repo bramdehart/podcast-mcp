@@ -423,7 +423,21 @@ def align_segments_with_speakers(
     return aligned_segments
 
 
-def speaker_excerpt_lines(segments: list[dict[str, object]], max_lines_per_speaker: int = 24) -> list[str]:
+def chronological_excerpt_lines(segments: list[dict[str, object]], max_lines: int = 160) -> list[str]:
+    lines = []
+    for segment in segments:
+        speaker_id = segment.get("speaker_id")
+        text = str(segment.get("text", "")).strip()
+        if not speaker_id or not text:
+            continue
+        start = number_value(segment.get("start")) or 0.0
+        lines.append(f"[{format_seconds(start)}] {speaker_id}: {text}")
+        if len(lines) >= max_lines:
+            break
+    return lines
+
+
+def speaker_excerpt_lines(segments: list[dict[str, object]], max_lines_per_speaker: int = 40) -> list[str]:
     grouped: dict[str, list[str]] = {}
     for segment in segments:
         speaker_id = segment.get("speaker_id")
@@ -468,16 +482,22 @@ def resolve_speaker_names(
     if not speaker_ids:
         return {}
 
-    excerpts = "\n".join(speaker_excerpt_lines(segments))
+    chronological_excerpts = "\n".join(chronological_excerpt_lines(segments))
+    speaker_excerpts = "\n".join(speaker_excerpt_lines(segments))
     prompt = f"""
 You receive a Dutch podcast transcript with anonymous speaker labels.
 Identify a speaker name only when it is clearly supported by the conversation.
 Do not guess. If there is insufficient evidence, use speaker_name null and confidence 0.
+Use chronological context to resolve introductions. For example, "ik ben X" identifies the current speaker,
+while "tegenover mij zit X" or "te gast is X" usually identifies another speaker in the conversation.
 
 Speaker labels: {", ".join(speaker_ids)}
 
-Transcript excerpts:
-{excerpts}
+Chronological transcript excerpt:
+{chronological_excerpts}
+
+Grouped speaker excerpts:
+{speaker_excerpts}
 
 Return only JSON in this format:
 {{
