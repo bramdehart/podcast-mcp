@@ -151,7 +151,14 @@ def resolve_speaker_names_locally(audio_url: str, transcript: dict[str, object])
 
     speaker_name_model = os.getenv("SPEAKER_NAME_MODEL", DEFAULT_SPEAKER_NAME_MODEL)
     ollama_base_url = os.getenv("OLLAMA_BASE_URL", DEFAULT_OLLAMA_BASE_URL)
-    speaker_mapping = resolve_speaker_names(segments, speaker_name_model, ollama_base_url)
+    try:
+        speaker_mapping = resolve_speaker_names(segments, speaker_name_model, ollama_base_url)
+    except Exception as error:
+        log(f"Speaker name resolution skipped: {error}")
+        transcript["speaker_name_resolution_enabled"] = False
+        transcript["speaker_name_resolution_error"] = str(error)
+        return transcript
+
     transcript["speaker_name_resolution_enabled"] = True
     transcript["speaker_name_model"] = speaker_name_model
     transcript["speaker_mapping"] = speaker_mapping
@@ -175,6 +182,7 @@ def main() -> int:
 
     parser = argparse.ArgumentParser(description="Submit podcast transcription to a RunPod serverless endpoint.")
     parser.add_argument("audio_url", help="Podcast audio URL to transcribe on RunPod.")
+    parser.add_argument("--job-id", help="Existing RunPod job id to poll/recover instead of submitting a new job.")
     args = parser.parse_args()
 
     api_key = os.getenv("RUNPOD_API_KEY")
@@ -186,8 +194,13 @@ def main() -> int:
         print("RUNPOD_ENDPOINT_ID missing. Add it to .env or export it.", file=sys.stderr)
         return 1
 
-    job_id = submit_job(api_key, endpoint_id, args.audio_url)
-    log(f"Submitted RunPod job {job_id}")
+    if args.job_id:
+        job_id = args.job_id
+        log(f"Recovering RunPod job {job_id}")
+    else:
+        job_id = submit_job(api_key, endpoint_id, args.audio_url)
+        log(f"Submitted RunPod job {job_id}")
+
     status_payload = poll_job(api_key, endpoint_id, job_id)
     transcript = extract_transcript(status_payload)
     transcript = resolve_speaker_names_locally(args.audio_url, transcript)
