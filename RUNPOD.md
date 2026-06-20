@@ -61,7 +61,7 @@ After that, create a RunPod Serverless endpoint with this image.
 
 The worker image uses a recent PyTorch/CUDA base image because RunPod Serverless GPU pools can include newer GPU architectures.
 Older CUDA images can fail the RunPod fitness check with `no kernel image is available for execution on the device`.
-The RunPod image intentionally does not install `torchcodec`; mismatched TorchCodec/PyTorch/CUDA builds can fail at startup with missing CUDA runtime libraries.
+The RunPod image pins `torchcodec` to the PyTorch-compatible version. Mismatched TorchCodec/PyTorch/CUDA builds can fail at startup with missing CUDA runtime libraries.
 
 ## Localhost callback
 
