@@ -33,6 +33,8 @@ DEFAULT_HOTWORDS = ""
 DEFAULT_DIARIZATION_ENABLED = False
 DEFAULT_DIARIZATION_MODEL = "pyannote/speaker-diarization-3.1"
 DEFAULT_DIARIZATION_DEVICE = "auto"
+DEFAULT_DIARIZATION_MIN_SPEAKERS = 2
+DEFAULT_DIARIZATION_MAX_SPEAKERS = 4
 DEFAULT_SPEAKER_NAME_RESOLUTION_ENABLED = False
 DEFAULT_SPEAKER_NAME_MODEL = "qwen2.5:7b-instruct"
 DEFAULT_OLLAMA_BASE_URL = "http://localhost:11434"
@@ -55,6 +57,13 @@ def format_seconds(seconds: float) -> str:
 
 
 def int_env(name: str, default: int) -> int:
+    value = os.getenv(name)
+    if value is None or value == "":
+        return default
+    return int(value)
+
+
+def optional_int_env(name: str, default: int | None = None) -> int | None:
     value = os.getenv(name)
     if value is None or value == "":
         return default
@@ -313,6 +322,8 @@ def run_diarization(
     audio_path: Path,
     diarization_model: str,
     diarization_device: str,
+    min_speakers: int | None,
+    max_speakers: int | None,
 ) -> list[dict[str, object]]:
     import soundfile
     import torch
@@ -366,7 +377,13 @@ def run_diarization(
         f"Loaded diarization waveform from WAV in {format_seconds(time.monotonic() - waveform_started_at)} "
         f"shape={tuple(waveform.shape)} sample_rate={sample_rate}"
     )
-    diarization = pipeline({"waveform": waveform, "sample_rate": sample_rate})
+    diarization_options = {}
+    if min_speakers is not None:
+        diarization_options["min_speakers"] = min_speakers
+    if max_speakers is not None:
+        diarization_options["max_speakers"] = max_speakers
+    log(f"Running pyannote with options={diarization_options}")
+    diarization = pipeline({"waveform": waveform, "sample_rate": sample_rate}, **diarization_options)
     turns = []
     for turn, _, speaker in diarization.itertracks(yield_label=True):
         start = float(turn.start)
@@ -485,11 +502,14 @@ def resolve_speaker_names(
     chronological_excerpts = "\n".join(chronological_excerpt_lines(segments))
     speaker_excerpts = "\n".join(speaker_excerpt_lines(segments))
     prompt = f"""
-You receive a Dutch podcast transcript with anonymous speaker labels.
+You receive a podcast transcript with anonymous speaker labels.
 Identify a speaker name only when it is clearly supported by the conversation.
-Do not guess. If there is insufficient evidence, use speaker_name null and confidence 0.
-Use chronological context to resolve introductions. For example, "ik ben X" identifies the current speaker,
-while "tegenover mij zit X" or "te gast is X" usually identifies another speaker in the conversation.
+Reason from natural language, not from exact phrase matching. The transcript may contain ASR misspellings.
+Use chronological context to interpret self-introductions, host introductions, guests being introduced,
+direct address, and speaker turns. If a name is clearly stated but possibly misspelled by ASR,
+return the name as it appears in the transcript and mention uncertainty in evidence.
+Do not invent names that are not supported by the transcript. If there is insufficient evidence,
+use speaker_name null and confidence 0.
 
 Speaker labels: {", ".join(speaker_ids)}
 
@@ -501,10 +521,10 @@ Grouped speaker excerpts:
 
 Return only JSON in this format:
 {{
-  "SPEAKER_00": {{
-    "speaker_name": "Bram",
+  "<speaker_id>": {{
+    "speaker_name": "Name or null",
     "speaker_confidence": 0.86,
-    "evidence": "brief evidence from the conversation"
+    "evidence": "brief evidence from the transcript"
   }}
 }}
 """.strip()
@@ -646,6 +666,8 @@ def process_audio_url(audio_url: str, write_files: bool = True) -> tuple[dict[st
     diarization_enabled = bool_env("DIARIZATION_ENABLED", DEFAULT_DIARIZATION_ENABLED)
     diarization_model = os.getenv("DIARIZATION_MODEL", DEFAULT_DIARIZATION_MODEL)
     diarization_device = os.getenv("DIARIZATION_DEVICE", device if device != "auto" else DEFAULT_DIARIZATION_DEVICE)
+    diarization_min_speakers = optional_int_env("DIARIZATION_MIN_SPEAKERS", DEFAULT_DIARIZATION_MIN_SPEAKERS)
+    diarization_max_speakers = optional_int_env("DIARIZATION_MAX_SPEAKERS", DEFAULT_DIARIZATION_MAX_SPEAKERS)
     speaker_name_resolution_enabled = bool_env(
         "SPEAKER_NAME_RESOLUTION_ENABLED",
         DEFAULT_SPEAKER_NAME_RESOLUTION_ENABLED,
@@ -662,6 +684,8 @@ def process_audio_url(audio_url: str, write_files: bool = True) -> tuple[dict[st
         f"language='{language or 'auto'}' "
         f"heartbeat='{format_seconds(heartbeat_seconds) if heartbeat_seconds > 0 else 'off'}' "
         f"diarization_enabled={diarization_enabled} "
+        f"diarization_min_speakers={diarization_min_speakers} "
+        f"diarization_max_speakers={diarization_max_speakers} "
         f"speaker_name_resolution_enabled={speaker_name_resolution_enabled}"
     )
     log_acceleration_status(device, diarization_device)
@@ -687,7 +711,13 @@ def process_audio_url(audio_url: str, write_files: bool = True) -> tuple[dict[st
         speaker_mapping = {}
         if diarization_enabled:
             diarization_started_at = time.monotonic()
-            diarization_turns = run_diarization(wav_path, diarization_model, diarization_device)
+            diarization_turns = run_diarization(
+                wav_path,
+                diarization_model,
+                diarization_device,
+                diarization_min_speakers,
+                diarization_max_speakers,
+            )
             processing["diarization_seconds"] = round(time.monotonic() - diarization_started_at, 3)
             if write_files:
                 write_json(
@@ -696,6 +726,8 @@ def process_audio_url(audio_url: str, write_files: bool = True) -> tuple[dict[st
                         "audio_url": audio_url,
                         "diarization_model": diarization_model,
                         "diarization_device": diarization_device,
+                        "min_speakers": diarization_min_speakers,
+                        "max_speakers": diarization_max_speakers,
                         "turns": diarization_turns,
                     },
                 )

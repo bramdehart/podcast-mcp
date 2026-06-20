@@ -11,6 +11,8 @@ ENV TRANSCRIBE_BEAM_SIZE=1
 ENV TRANSCRIBE_LANGUAGE=nl
 ENV DIARIZATION_ENABLED=true
 ENV DIARIZATION_DEVICE=cuda
+ENV DIARIZATION_MIN_SPEAKERS=2
+ENV DIARIZATION_MAX_SPEAKERS=4
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends curl ffmpeg libsndfile1 \
