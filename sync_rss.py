@@ -9,6 +9,8 @@ from pathlib import Path
 import psycopg
 from dotenv import load_dotenv
 
+from ingest_transcript import ingest_transcript_file
+
 
 DEFAULT_RSS_URL = "https://rss.beehiiv.com/podcasts/019d2587-e790-7b44-bb7a-6eebcaae225c.xml"
 USER_AGENT = "AppleCoreMedia"
@@ -100,16 +102,32 @@ def get_indexed_audio_urls(database_url: str) -> set[str]:
             return {row[0] for row in cursor.fetchall()}
 
 
-def transcribe_episode(audio_url: str) -> None:
+def transcript_path_from_process(result: subprocess.CompletedProcess[bytes]) -> Path:
+    output = result.stdout.decode().strip()
+    if not output:
+        raise RuntimeError("Transcription command did not print a transcript path")
+    return Path(output.splitlines()[-1])
+
+
+def transcribe_episode(audio_url: str) -> Path:
     execution_mode = os.getenv("TRANSCRIBE_EXECUTION", "local").strip().lower()
     if execution_mode == "runpod":
-        subprocess.run([sys.executable, str(RUNPOD_CLIENT_SCRIPT), audio_url], check=True)
-        return
+        result = subprocess.run(
+            [sys.executable, str(RUNPOD_CLIENT_SCRIPT), audio_url],
+            check=True,
+            stdout=subprocess.PIPE,
+        )
+        return transcript_path_from_process(result)
 
     if execution_mode != "local":
         raise ValueError("TRANSCRIBE_EXECUTION must be 'local' or 'runpod'")
 
-    subprocess.run([sys.executable, str(TRANSCRIBE_SCRIPT), audio_url], check=True)
+    result = subprocess.run(
+        [sys.executable, str(TRANSCRIBE_SCRIPT), audio_url],
+        check=True,
+        stdout=subprocess.PIPE,
+    )
+    return transcript_path_from_process(result)
 
 
 def main() -> int:
@@ -128,7 +146,8 @@ def main() -> int:
     for episode in rss_episodes:
         if episode["audio_url"] not in indexed_audio_urls:
             print(episode["title"])
-            transcribe_episode(str(episode["audio_url"]))
+            transcript_path = transcribe_episode(str(episode["audio_url"]))
+            ingest_transcript_file(transcript_path, episode, database_url)
             return 0
 
     return 0
