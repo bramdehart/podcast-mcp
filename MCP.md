@@ -65,3 +65,18 @@ Search by speaker:
 ```bash
 .venv/bin/python podcast_tools.py speaker --speaker-name "Alexander" --query "Anthropic"
 ```
+
+## Scheduled RSS sync
+
+Use a cron expression in `SYNC_CRON` to schedule RSS syncs. The default runs every Friday at 06:00 in `Europe/Amsterdam`:
+
+```env
+SYNC_CRON=0 6 * * 5
+SYNC_TIMEZONE=Europe/Amsterdam
+```
+
+Run the scheduler:
+
+```bash
+.venv/bin/python sync_scheduler.py
+```
