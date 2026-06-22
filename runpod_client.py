@@ -140,7 +140,12 @@ def write_transcript(audio_url: str, transcript: dict[str, object]) -> Path:
     return transcript_path
 
 
-def resolve_speaker_names_locally(audio_url: str, transcript: dict[str, object]) -> dict[str, object]:
+def resolve_speaker_names_locally(
+    audio_url: str,
+    transcript: dict[str, object],
+    episode_description: str | None = None,
+    podcast_description: str | None = None,
+) -> dict[str, object]:
     if not transcript.get("diarization_enabled"):
         return transcript
     if not bool_env("SPEAKER_NAME_RESOLUTION_ENABLED", DEFAULT_SPEAKER_NAME_RESOLUTION_ENABLED):
@@ -152,7 +157,12 @@ def resolve_speaker_names_locally(audio_url: str, transcript: dict[str, object])
 
     speaker_name_model = os.getenv("SPEAKER_NAME_MODEL", DEFAULT_SPEAKER_NAME_MODEL)
     try:
-        speaker_mapping = resolve_speaker_names(segments, speaker_name_model)
+        speaker_mapping = resolve_speaker_names(
+            segments,
+            speaker_name_model,
+            episode_description,
+            podcast_description,
+        )
     except Exception as error:
         log(f"Speaker name resolution skipped: {error}")
         transcript["speaker_name_resolution_enabled"] = False
@@ -161,6 +171,8 @@ def resolve_speaker_names_locally(audio_url: str, transcript: dict[str, object])
 
     transcript["speaker_name_resolution_enabled"] = True
     transcript["speaker_name_model"] = speaker_name_model
+    transcript["podcast_description"] = podcast_description
+    transcript["episode_description"] = episode_description
     transcript["speaker_mapping"] = speaker_mapping
     transcript["segments"] = apply_speaker_mapping(segments, speaker_mapping)
 
@@ -169,6 +181,8 @@ def resolve_speaker_names_locally(audio_url: str, transcript: dict[str, object])
         speaker_mapping_path,
         {
             "audio_url": audio_url,
+            "podcast_description": podcast_description,
+            "episode_description": episode_description,
             "speaker_name_model": speaker_name_model,
             "speaker_mapping": speaker_mapping,
         },
@@ -182,6 +196,8 @@ def main() -> int:
 
     parser = argparse.ArgumentParser(description="Submit podcast transcription to a RunPod serverless endpoint.")
     parser.add_argument("audio_url", help="Podcast audio URL to transcribe on RunPod.")
+    parser.add_argument("--podcast-description", help="Podcast channel description used as local speaker-name context.")
+    parser.add_argument("--episode-description", help="Podcast episode description used as local speaker-name context.")
     parser.add_argument("--job-id", help="Existing RunPod job id to poll/recover instead of submitting a new job.")
     args = parser.parse_args()
 
@@ -203,7 +219,12 @@ def main() -> int:
 
     status_payload = poll_job(api_key, endpoint_id, job_id)
     transcript = extract_transcript(status_payload)
-    transcript = resolve_speaker_names_locally(args.audio_url, transcript)
+    transcript = resolve_speaker_names_locally(
+        args.audio_url,
+        transcript,
+        args.episode_description,
+        args.podcast_description,
+    )
     transcript_path = write_transcript(args.audio_url, transcript)
     log(f"Wrote RunPod transcript JSON to {transcript_path}")
     print(transcript_path)

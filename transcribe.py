@@ -40,6 +40,7 @@ DEFAULT_SPEAKER_NAME_RESOLUTION_ENABLED = False
 DEFAULT_SPEAKER_NAME_MODEL = "gpt-5.4"
 DEFAULT_PROGRESS_HEARTBEAT_SECONDS = 60
 PROGRESS_LOG_INTERVAL_SECONDS = 300
+MAX_EPISODE_DESCRIPTION_PROMPT_CHARS = 4000
 
 
 def log(message: str) -> None:
@@ -88,6 +89,15 @@ def cleanup_gpu_memory(label: str) -> None:
             log(f"Cleaned CUDA memory after {label}")
     except Exception as error:
         log(f"CUDA cleanup skipped after {label}: {error}")
+
+
+def prompt_description(value: str | None) -> str:
+    if not value:
+        return "none provided"
+    normalized = re.sub(r"\s+", " ", value).strip()
+    if len(normalized) <= MAX_EPISODE_DESCRIPTION_PROMPT_CHARS:
+        return normalized
+    return normalized[:MAX_EPISODE_DESCRIPTION_PROMPT_CHARS].rstrip() + "..."
 
 
 def resolve_torch_device(device: str) -> str:
@@ -514,6 +524,8 @@ def parse_json_object(value: str) -> dict[str, object]:
 def resolve_speaker_names(
     segments: list[dict[str, object]],
     model: str,
+    episode_description: str | None = None,
+    podcast_description: str | None = None,
 ) -> dict[str, dict[str, object]]:
     import requests
 
@@ -527,17 +539,28 @@ def resolve_speaker_names(
 
     chronological_excerpts = "\n".join(chronological_excerpt_lines(segments))
     speaker_excerpts = "\n".join(speaker_excerpt_lines(segments))
+    podcast_description_text = prompt_description(podcast_description)
+    episode_description_text = prompt_description(episode_description)
     prompt = f"""
 You receive a podcast transcript with anonymous speaker labels.
 Identify a speaker name only when it is clearly supported by the conversation.
 Reason from natural language, not from exact phrase matching. The transcript may contain ASR misspellings.
 Use chronological context to interpret self-introductions, host introductions, guests being introduced,
 direct address, and speaker turns. If a name is clearly stated but possibly misspelled by ASR,
-return the name as it appears in the transcript and mention uncertainty in evidence.
+and podcast or episode metadata contains the canonical spelling for the same person,
+use the metadata spelling as speaker_name and mention the transcript spelling in evidence.
+If no matching metadata spelling exists, return the name as it appears in the transcript
+and mention uncertainty in evidence.
 Do not invent names that are not supported by the transcript. If there is insufficient evidence,
 use speaker_name null and confidence 0.
 
 Speaker labels: {", ".join(speaker_ids)}
+
+Podcast channel description:
+{podcast_description_text}
+
+Podcast episode description:
+{episode_description_text}
 
 Chronological transcript excerpt:
 {chronological_excerpts}
@@ -644,6 +667,8 @@ def write_json(path: Path, payload: object) -> None:
 
 def build_transcript_payload(
     audio_url: str,
+    podcast_description: str | None,
+    episode_description: str | None,
     model_size: str,
     compute_type: str,
     device: str,
@@ -664,6 +689,8 @@ def build_transcript_payload(
     info_get = info.get if isinstance(info, dict) else lambda key, default=None: getattr(info, key, default)
     return {
         "audio_url": audio_url,
+        "podcast_description": podcast_description,
+        "episode_description": episode_description,
         "engine": "faster-whisper",
         "model": model_size,
         "compute_type": compute_type,
@@ -695,7 +722,12 @@ def write_transcript(transcript_path: Path, payload: dict[str, object]) -> None:
     log(f"Wrote transcript JSON to {transcript_path} in {format_seconds(time.monotonic() - started_at)}")
 
 
-def process_audio_url(audio_url: str, write_files: bool = True) -> tuple[dict[str, object], Path]:
+def process_audio_url(
+    audio_url: str,
+    write_files: bool = True,
+    episode_description: str | None = None,
+    podcast_description: str | None = None,
+) -> tuple[dict[str, object], Path]:
     total_started_at = time.monotonic()
     model_size = os.getenv("TRANSCRIBE_MODEL", DEFAULT_MODEL_SIZE)
     compute_type = os.getenv("TRANSCRIBE_COMPUTE_TYPE", DEFAULT_COMPUTE_TYPE)
@@ -776,13 +808,20 @@ def process_audio_url(audio_url: str, write_files: bool = True) -> tuple[dict[st
 
         if diarization_enabled and speaker_name_resolution_enabled:
             speaker_mapping_started_at = time.monotonic()
-            speaker_mapping = resolve_speaker_names(segments, speaker_name_model)
+            speaker_mapping = resolve_speaker_names(
+                segments,
+                speaker_name_model,
+                episode_description,
+                podcast_description,
+            )
             processing["speaker_name_resolution_seconds"] = round(time.monotonic() - speaker_mapping_started_at, 3)
             if write_files:
                 write_json(
                     speaker_mapping_path,
                     {
                         "audio_url": audio_url,
+                        "podcast_description": podcast_description,
+                        "episode_description": episode_description,
                         "speaker_name_model": speaker_name_model,
                         "speaker_mapping": speaker_mapping,
                     },
@@ -792,6 +831,8 @@ def process_audio_url(audio_url: str, write_files: bool = True) -> tuple[dict[st
 
         payload = build_transcript_payload(
             audio_url,
+            podcast_description,
+            episode_description,
             model_size,
             compute_type,
             device,
@@ -832,10 +873,17 @@ def main() -> int:
 
     parser = argparse.ArgumentParser(description="Transcribe podcast audio to /tmp JSON.")
     parser.add_argument("audio_url", help="Podcast audio URL to download and transcribe.")
+    parser.add_argument("--podcast-description", help="Podcast channel description used as speaker-name context.")
+    parser.add_argument("--episode-description", help="Podcast episode description used as speaker-name context.")
     args = parser.parse_args()
 
     try:
-        _, transcript_path = process_audio_url(args.audio_url, write_files=True)
+        _, transcript_path = process_audio_url(
+            args.audio_url,
+            write_files=True,
+            episode_description=args.episode_description,
+            podcast_description=args.podcast_description,
+        )
     except subprocess.CalledProcessError as error:
         return error.returncode or 1
 

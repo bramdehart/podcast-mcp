@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 import os
+import re
 import subprocess
 import sys
 import xml.etree.ElementTree as ET
 from email.utils import parsedate_to_datetime
+from html import unescape
 from pathlib import Path
 
 import psycopg
@@ -39,6 +41,14 @@ def first_text_ns(item: ET.Element, namespace: str, tag: str) -> str | None:
     return first_text(item, f"{{{namespace}}}{tag}")
 
 
+def clean_description(value: str | None) -> str | None:
+    if not value:
+        return None
+    text = re.sub(r"<[^>]+>", " ", unescape(value))
+    text = re.sub(r"\s+", " ", text).strip()
+    return text or None
+
+
 def parse_duration(value: str | None) -> int | None:
     if not value:
         return None
@@ -64,6 +74,8 @@ def parse_episode_items(xml_data: bytes) -> list[dict[str, object]]:
     episodes = []
 
     itunes_namespace = "http://www.itunes.com/dtds/podcast-1.0.dtd"
+    content_namespace = "http://purl.org/rss/1.0/modules/content/"
+    podcast_description = clean_description(first_text(root, "./channel/description"))
 
     for item in root.findall("./channel/item"):
         title = first_text(item, "title")
@@ -82,10 +94,15 @@ def parse_episode_items(xml_data: bytes) -> list[dict[str, object]]:
                 published_at = None
 
         duration = parse_duration(first_text_ns(item, itunes_namespace, "duration"))
+        description = clean_description(
+            first_text_ns(item, content_namespace, "encoded") or first_text(item, "description")
+        )
 
         episodes.append(
             {
                 "title": title,
+                "podcast_description": podcast_description,
+                "description": description,
                 "published_at": published_at,
                 "audio_url": audio_url,
                 "duration": duration,
@@ -109,11 +126,20 @@ def transcript_path_from_process(result: subprocess.CompletedProcess[bytes]) -> 
     return Path(output.splitlines()[-1])
 
 
-def transcribe_episode(audio_url: str) -> Path:
+def transcribe_episode(
+    audio_url: str,
+    episode_description: str | None = None,
+    podcast_description: str | None = None,
+) -> Path:
     execution_mode = os.getenv("TRANSCRIBE_EXECUTION", "local").strip().lower()
     if execution_mode == "runpod":
+        command = [sys.executable, str(RUNPOD_CLIENT_SCRIPT), audio_url]
+        if podcast_description:
+            command.extend(["--podcast-description", podcast_description])
+        if episode_description:
+            command.extend(["--episode-description", episode_description])
         result = subprocess.run(
-            [sys.executable, str(RUNPOD_CLIENT_SCRIPT), audio_url],
+            command,
             check=True,
             stdout=subprocess.PIPE,
         )
@@ -122,11 +148,12 @@ def transcribe_episode(audio_url: str) -> Path:
     if execution_mode != "local":
         raise ValueError("TRANSCRIBE_EXECUTION must be 'local' or 'runpod'")
 
-    result = subprocess.run(
-        [sys.executable, str(TRANSCRIBE_SCRIPT), audio_url],
-        check=True,
-        stdout=subprocess.PIPE,
-    )
+    command = [sys.executable, str(TRANSCRIBE_SCRIPT), audio_url]
+    if podcast_description:
+        command.extend(["--podcast-description", podcast_description])
+    if episode_description:
+        command.extend(["--episode-description", episode_description])
+    result = subprocess.run(command, check=True, stdout=subprocess.PIPE)
     return transcript_path_from_process(result)
 
 
@@ -146,7 +173,11 @@ def main() -> int:
     for episode in rss_episodes:
         if episode["audio_url"] not in indexed_audio_urls:
             print(episode["title"])
-            transcript_path = transcribe_episode(str(episode["audio_url"]))
+            transcript_path = transcribe_episode(
+                str(episode["audio_url"]),
+                str(episode["description"]) if episode.get("description") else None,
+                str(episode["podcast_description"]) if episode.get("podcast_description") else None,
+            )
             ingest_transcript_file(transcript_path, episode, database_url)
             return 0
 
