@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import argparse
 from collections import namedtuple
+import gc
 import hashlib
 import json
 import os
@@ -74,6 +75,19 @@ def bool_env(name: str, default: bool) -> bool:
     if value is None or value == "":
         return default
     return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def cleanup_gpu_memory(label: str) -> None:
+    gc.collect()
+    try:
+        import torch
+
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+            torch.cuda.ipc_collect()
+            log(f"Cleaned CUDA memory after {label}")
+    except Exception as error:
+        log(f"CUDA cleanup skipped after {label}: {error}")
 
 
 def resolve_torch_device(device: str) -> str:
@@ -254,17 +268,21 @@ def transcribe_with_faster_whisper(
     from faster_whisper import WhisperModel
 
     started_at = time.monotonic()
+    cleanup_gpu_memory("before Whisper load")
     log(f"Loading Whisper model '{model_size}' with device='{device}' compute_type='{compute_type}'")
-    model = WhisperModel(model_size, device=device, compute_type=compute_type)
-    log(f"Model loaded in {format_seconds(time.monotonic() - started_at)}")
-
-    started_at = time.monotonic()
-    log(
-        f"Transcribing with language='{language or 'auto'}' and beam_size={beam_size} "
-        f"hotwords='{hotwords or ''}'"
-    )
-    stop_event, heartbeat_thread = start_heartbeat("Transcription", heartbeat_seconds)
+    model = None
+    stop_event = threading.Event()
+    heartbeat_thread = None
     try:
+        model = WhisperModel(model_size, device=device, compute_type=compute_type)
+        log(f"Model loaded in {format_seconds(time.monotonic() - started_at)}")
+
+        started_at = time.monotonic()
+        log(
+            f"Transcribing with language='{language or 'auto'}' and beam_size={beam_size} "
+            f"hotwords='{hotwords or ''}'"
+        )
+        stop_event, heartbeat_thread = start_heartbeat("Transcription", heartbeat_seconds)
         segments, info = model.transcribe(
             str(audio_path),
             language=language,
@@ -289,6 +307,9 @@ def transcribe_with_faster_whisper(
                 next_progress_log_at += PROGRESS_LOG_INTERVAL_SECONDS
     finally:
         stop_heartbeat(stop_event, heartbeat_thread)
+        if model is not None:
+            del model
+        cleanup_gpu_memory("Whisper transcription")
 
     log(f"Transcribed {len(transcript_segments)} segments in {format_seconds(time.monotonic() - started_at)}")
 
@@ -398,6 +419,9 @@ def run_diarization(
         )
 
     log(f"Diarized {len(turns)} speaker turns in {format_seconds(time.monotonic() - started_at)}")
+    del pipeline
+    del waveform
+    cleanup_gpu_memory("speaker diarization")
     return turns
 
 
@@ -798,6 +822,7 @@ def process_audio_url(audio_url: str, write_files: bool = True) -> tuple[dict[st
         if transcript_written and wav_path.exists():
             wav_path.unlink()
             log(f"Removed WAV file {wav_path}")
+        cleanup_gpu_memory("transcription job")
 
     return payload, transcript_path
 
