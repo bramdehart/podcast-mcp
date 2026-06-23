@@ -32,6 +32,12 @@ RUNPOD_ENDPOINT_ID=<runpod-endpoint-id>
 RUNPOD_POLL_INTERVAL_SECONDS=10
 RUNPOD_EXECUTION_TIMEOUT_MS=1800000
 RUNPOD_TTL_MS=3600000
+MCP_TRANSPORT=streamable-http
+MCP_BIND_ADDRESS=127.0.0.1
+MCP_HOST=0.0.0.0
+MCP_PORT=8000
+MCP_PUBLIC_URL=https://mcp.example.com
+MCP_BEARER_TOKEN=<strong-mcp-token>
 ```
 
 `DATABASE_URL` is optional when running through Docker Compose. Compose builds the

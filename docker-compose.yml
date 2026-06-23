@@ -51,5 +51,26 @@ services:
         condition: service_healthy
     command: ["python", "sync_scheduler.py"]
 
+  mcp:
+    build:
+      context: .
+      dockerfile: Dockerfile.app
+    image: podcast-rag-app
+    restart: unless-stopped
+    profiles:
+      - mcp
+    env_file:
+      - ${APP_ENV_FILE:-.env}
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-podcast_rag}:${POSTGRES_PASSWORD:-podcast_rag}@postgres:5432/${POSTGRES_DB:-podcast_rag}
+      MCP_TRANSPORT: streamable-http
+      MCP_HOST: 0.0.0.0
+    ports:
+      - "${MCP_BIND_ADDRESS:-127.0.0.1}:${MCP_PORT:-8000}:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: ["python", "podcast_mcp_server.py"]
+
 volumes:
   postgres_data:

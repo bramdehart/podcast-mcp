@@ -1,7 +1,11 @@
 #!/usr/bin/env python3
+import hmac
+import os
 from typing import Any
 
 from dotenv import load_dotenv
+from mcp.server.auth.provider import AccessToken, TokenVerifier
+from mcp.server.auth.settings import AuthSettings
 from mcp.server.fastmcp import FastMCP
 
 from podcast_tools import (
@@ -15,7 +19,49 @@ from podcast_tools import (
 
 load_dotenv()
 
-mcp = FastMCP("podcast-rag")
+
+DEFAULT_MCP_HOST = "127.0.0.1"
+DEFAULT_MCP_PORT = 8000
+DEFAULT_MCP_PUBLIC_URL = "http://localhost:8000"
+
+
+class StaticBearerTokenVerifier(TokenVerifier):
+    def __init__(self, token: str) -> None:
+        self.token = token
+
+    async def verify_token(self, token: str) -> AccessToken | None:
+        if not hmac.compare_digest(token, self.token):
+            return None
+        return AccessToken(token=token, client_id="podcast-rag", scopes=["mcp"])
+
+
+def int_env(name: str, default: int) -> int:
+    value = os.getenv(name)
+    if value is None or value == "":
+        return default
+    return int(value)
+
+
+def create_mcp_server() -> FastMCP:
+    bearer_token = os.getenv("MCP_BEARER_TOKEN")
+    public_url = os.getenv("MCP_PUBLIC_URL", DEFAULT_MCP_PUBLIC_URL)
+    auth_settings = None
+    token_verifier = None
+
+    if bearer_token:
+        auth_settings = AuthSettings(issuer_url=public_url, resource_server_url=public_url)
+        token_verifier = StaticBearerTokenVerifier(bearer_token)
+
+    return FastMCP(
+        "podcast-rag",
+        auth=auth_settings,
+        token_verifier=token_verifier,
+        host=os.getenv("MCP_HOST", DEFAULT_MCP_HOST),
+        port=int_env("MCP_PORT", DEFAULT_MCP_PORT),
+    )
+
+
+mcp = create_mcp_server()
 
 
 @mcp.tool()
@@ -97,4 +143,9 @@ def search_by_speaker(
 
 
 if __name__ == "__main__":
-    mcp.run()
+    transport = os.getenv("MCP_TRANSPORT", "stdio").strip().lower()
+    if transport != "stdio" and not os.getenv("MCP_BEARER_TOKEN"):
+        raise SystemExit("MCP_BEARER_TOKEN is required when MCP_TRANSPORT is not stdio")
+    if transport not in {"stdio", "sse", "streamable-http"}:
+        raise SystemExit("MCP_TRANSPORT must be 'stdio', 'sse', or 'streamable-http'")
+    mcp.run(transport=transport)
