@@ -25,7 +25,6 @@ The tools expect:
 - `DATABASE_URL` pointing to the Postgres database.
 - `OPENAI_API_KEY` with embeddings request permission.
 - `EMBEDDING_MODEL=text-embedding-3-small`.
-- `EMBEDDING_DIMENSIONS=1536`.
 
 Install dependencies after pulling changes:
 

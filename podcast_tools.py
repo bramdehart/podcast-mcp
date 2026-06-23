@@ -14,7 +14,6 @@ from ingest_transcript import (
     DEFAULT_EMBEDDING_DIMENSIONS,
     DEFAULT_EMBEDDING_MODEL,
     embed_texts,
-    int_env,
     vector_literal,
 )
 
@@ -33,7 +32,7 @@ def database_url() -> str:
 def embedding_config() -> tuple[str, int]:
     return (
         os.getenv("EMBEDDING_MODEL", DEFAULT_EMBEDDING_MODEL),
-        int_env("EMBEDDING_DIMENSIONS", DEFAULT_EMBEDDING_DIMENSIONS),
+        DEFAULT_EMBEDDING_DIMENSIONS,
     )
 
 

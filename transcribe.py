@@ -31,7 +31,7 @@ DEFAULT_MODEL_SIZE = "medium"
 DEFAULT_COMPUTE_TYPE = "int8"
 DEFAULT_DEVICE = "auto"
 DEFAULT_BEAM_SIZE = 5
-DEFAULT_CONDITION_ON_PREVIOUS_TEXT = False
+CONDITION_ON_PREVIOUS_TEXT = False
 VAD_FILTER = True
 NO_SPEECH_THRESHOLD = 0.5
 DEFAULT_CHUNK_SECONDS = 1800
@@ -43,7 +43,7 @@ DEFAULT_DIARIZATION_MIN_SPEAKERS = 2
 DEFAULT_DIARIZATION_MAX_SPEAKERS = 4
 DEFAULT_SPEAKER_NAME_RESOLUTION_ENABLED = False
 DEFAULT_SPEAKER_NAME_MODEL = "gpt-5.4"
-DEFAULT_PROGRESS_HEARTBEAT_SECONDS = 60
+PROGRESS_HEARTBEAT_SECONDS = 60
 PROGRESS_LOG_INTERVAL_SECONDS = 300
 MAX_EPISODE_DESCRIPTION_PROMPT_CHARS = 4000
 
@@ -67,13 +67,6 @@ def int_env(name: str, default: int) -> int:
     if value is None or value == "":
         return default
     return int(value)
-
-
-def float_env(name: str, default: float) -> float:
-    value = os.getenv(name)
-    if value is None or value == "":
-        return default
-    return float(value)
 
 
 def optional_int_env(name: str, default: int | None = None) -> int | None:
@@ -367,9 +360,7 @@ def transcribe_with_faster_whisper(
     compute_type: str,
     device: str,
     beam_size: int,
-    condition_on_previous_text: bool,
     hotwords: str | None,
-    heartbeat_seconds: int,
     language: str | None,
 ) -> tuple[list[dict[str, object]], object]:
     from faster_whisper import WhisperModel
@@ -387,16 +378,16 @@ def transcribe_with_faster_whisper(
         started_at = time.monotonic()
         log(
             f"Transcribing with language='{language or 'auto'}' and beam_size={beam_size} "
-            f"condition_on_previous_text={condition_on_previous_text} "
+            f"condition_on_previous_text={CONDITION_ON_PREVIOUS_TEXT} "
             f"vad_filter={VAD_FILTER} no_speech_threshold={NO_SPEECH_THRESHOLD} "
             f"hotwords='{hotwords or ''}'"
         )
-        stop_event, heartbeat_thread = start_heartbeat("Transcription", heartbeat_seconds)
+        stop_event, heartbeat_thread = start_heartbeat("Transcription", PROGRESS_HEARTBEAT_SECONDS)
         segments, info = model.transcribe(
             str(audio_path),
             language=language,
             beam_size=beam_size,
-            condition_on_previous_text=condition_on_previous_text,
+            condition_on_previous_text=CONDITION_ON_PREVIOUS_TEXT,
             vad_filter=VAD_FILTER,
             no_speech_threshold=NO_SPEECH_THRESHOLD,
             hotwords=hotwords,
@@ -434,9 +425,7 @@ def transcribe_audio(
     compute_type: str,
     device: str,
     beam_size: int,
-    condition_on_previous_text: bool,
     hotwords: str | None,
-    heartbeat_seconds: int,
     language: str | None,
 ) -> tuple[list[dict[str, object]], object]:
     return transcribe_with_faster_whisper(
@@ -445,9 +434,7 @@ def transcribe_audio(
         compute_type,
         device,
         beam_size,
-        condition_on_previous_text,
         hotwords,
-        heartbeat_seconds,
         language,
     )
 
@@ -784,7 +771,6 @@ def build_transcript_payload(
     compute_type: str,
     device: str,
     beam_size: int,
-    condition_on_previous_text: bool,
     chunk_seconds: int,
     hotwords: str | None,
     language: str | None,
@@ -809,7 +795,7 @@ def build_transcript_payload(
         "compute_type": compute_type,
         "device": device,
         "beam_size": beam_size,
-        "condition_on_previous_text": condition_on_previous_text,
+        "condition_on_previous_text": CONDITION_ON_PREVIOUS_TEXT,
         "vad_filter": VAD_FILTER,
         "no_speech_threshold": NO_SPEECH_THRESHOLD,
         "chunk_seconds": chunk_seconds,
@@ -850,12 +836,7 @@ def process_audio_url(
     compute_type = os.getenv("TRANSCRIBE_COMPUTE_TYPE", DEFAULT_COMPUTE_TYPE)
     device = os.getenv("TRANSCRIBE_DEVICE", DEFAULT_DEVICE)
     beam_size = int_env("TRANSCRIBE_BEAM_SIZE", DEFAULT_BEAM_SIZE)
-    condition_on_previous_text = bool_env(
-        "TRANSCRIBE_CONDITION_ON_PREVIOUS_TEXT",
-        DEFAULT_CONDITION_ON_PREVIOUS_TEXT,
-    )
     chunk_seconds = int_env("TRANSCRIBE_CHUNK_SECONDS", DEFAULT_CHUNK_SECONDS)
-    heartbeat_seconds = int_env("TRANSCRIBE_PROGRESS_HEARTBEAT_SECONDS", DEFAULT_PROGRESS_HEARTBEAT_SECONDS)
     hotwords = os.getenv("TRANSCRIBE_HOTWORDS", DEFAULT_HOTWORDS) or None
     language = os.getenv("TRANSCRIBE_LANGUAGE") or None
     diarization_enabled = bool_env("DIARIZATION_ENABLED", DEFAULT_DIARIZATION_ENABLED)
@@ -875,11 +856,11 @@ def process_audio_url(
     log(
         "Starting transcription "
         f"engine='faster-whisper' model='{model_size}' device='{device}' compute_type='{compute_type}' beam_size={beam_size} "
-        f"condition_on_previous_text={condition_on_previous_text} "
+        f"condition_on_previous_text={CONDITION_ON_PREVIOUS_TEXT} "
         f"vad_filter={VAD_FILTER} no_speech_threshold={NO_SPEECH_THRESHOLD} "
         f"chunk_seconds={chunk_seconds} "
         f"language='{language or 'auto'}' "
-        f"heartbeat='{format_seconds(heartbeat_seconds) if heartbeat_seconds > 0 else 'off'}' "
+        f"heartbeat='{format_seconds(PROGRESS_HEARTBEAT_SECONDS) if PROGRESS_HEARTBEAT_SECONDS > 0 else 'off'}' "
         f"diarization_enabled={diarization_enabled} "
         f"diarization_min_speakers={diarization_min_speakers} "
         f"diarization_max_speakers={diarization_max_speakers} "
@@ -933,9 +914,7 @@ def process_audio_url(
                     compute_type,
                     device,
                     beam_size,
-                    condition_on_previous_text,
                     hotwords,
-                    heartbeat_seconds,
                     language,
                 )
                 processing["transcription_seconds"] = round(
@@ -989,9 +968,7 @@ def process_audio_url(
                 compute_type,
                 device,
                 beam_size,
-                condition_on_previous_text,
                 hotwords,
-                heartbeat_seconds,
                 language,
             )
             processing["transcription_seconds"] = round(time.monotonic() - transcription_started_at, 3)
@@ -1056,7 +1033,6 @@ def process_audio_url(
             compute_type,
             device,
             beam_size,
-            condition_on_previous_text,
             chunk_seconds,
             hotwords,
             language,

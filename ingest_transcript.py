@@ -34,13 +34,6 @@ def log(message: str) -> None:
     print(message, file=sys.stderr, flush=True)
 
 
-def int_env(name: str, default: int) -> int:
-    value = os.getenv(name)
-    if value is None or value == "":
-        return default
-    return int(value)
-
-
 def load_transcript(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
 
@@ -338,15 +331,15 @@ def ingest_transcript_file(transcript_path: Path, episode: dict[str, Any], datab
 
     chunks = chunk_segments(
         segments,
-        int_env("EMBEDDING_CHUNK_MAX_CHARS", DEFAULT_CHUNK_MAX_CHARS),
-        int_env("EMBEDDING_CHUNK_MAX_SECONDS", DEFAULT_CHUNK_MAX_SECONDS),
+        DEFAULT_CHUNK_MAX_CHARS,
+        DEFAULT_CHUNK_MAX_SECONDS,
     )
     if not chunks:
         raise RuntimeError("Transcript did not produce chunks")
 
     embedding_model = os.getenv("EMBEDDING_MODEL", DEFAULT_EMBEDDING_MODEL)
-    embedding_dimensions = int_env("EMBEDDING_DIMENSIONS", DEFAULT_EMBEDDING_DIMENSIONS)
-    embedding_batch_size = int_env("EMBEDDING_BATCH_SIZE", DEFAULT_EMBEDDING_BATCH_SIZE)
+    embedding_dimensions = DEFAULT_EMBEDDING_DIMENSIONS
+    embedding_batch_size = DEFAULT_EMBEDDING_BATCH_SIZE
 
     log(
         "Embedding transcript "
