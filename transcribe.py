@@ -292,14 +292,18 @@ def split_wav_chunk(source_wav_path: Path, chunk_wav_path: Path, offset_seconds:
             "-loglevel",
             "error",
             "-y",
+            "-i",
+            str(source_wav_path),
             "-ss",
             str(offset_seconds),
             "-t",
             str(duration_seconds),
-            "-i",
-            str(source_wav_path),
-            "-c",
-            "copy",
+            "-ac",
+            "1",
+            "-ar",
+            "16000",
+            "-c:a",
+            "pcm_s16le",
             str(chunk_wav_path),
         ],
         check=True,
@@ -502,11 +506,18 @@ def run_diarization(
     log("Running speaker diarization")
     waveform_started_at = time.monotonic()
     waveform_data, sample_rate = soundfile.read(str(audio_path), dtype="float32", always_2d=True)
-    waveform = torch.from_numpy(waveform_data.T)
+    waveform = torch.as_tensor(waveform_data.T.copy(), dtype=torch.float32).contiguous()
     log(
         f"Loaded diarization waveform from WAV in {format_seconds(time.monotonic() - waveform_started_at)} "
         f"shape={tuple(waveform.shape)} sample_rate={sample_rate}"
     )
+    if len(waveform.shape) != 2 or waveform.shape[1] == 0 or waveform.shape[0] > waveform.shape[1]:
+        log(f"Skipping speaker diarization for invalid waveform shape={tuple(waveform.shape)}")
+        del pipeline
+        del waveform
+        cleanup_gpu_memory("speaker diarization")
+        return []
+
     diarization_options = {}
     if min_speakers is not None:
         diarization_options["min_speakers"] = min_speakers
