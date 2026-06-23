@@ -32,8 +32,8 @@ DEFAULT_COMPUTE_TYPE = "int8"
 DEFAULT_DEVICE = "auto"
 DEFAULT_BEAM_SIZE = 5
 DEFAULT_CONDITION_ON_PREVIOUS_TEXT = False
-DEFAULT_VAD_FILTER = True
-DEFAULT_NO_SPEECH_THRESHOLD = 0.5
+VAD_FILTER = True
+NO_SPEECH_THRESHOLD = 0.5
 DEFAULT_CHUNK_SECONDS = 1800
 DEFAULT_HOTWORDS = ""
 DEFAULT_DIARIZATION_ENABLED = False
@@ -364,9 +364,6 @@ def transcribe_with_faster_whisper(
     device: str,
     beam_size: int,
     condition_on_previous_text: bool,
-    vad_filter: bool,
-    no_speech_threshold: float,
-    chunk_seconds: int,
     hotwords: str | None,
     heartbeat_seconds: int,
     language: str | None,
@@ -387,7 +384,7 @@ def transcribe_with_faster_whisper(
         log(
             f"Transcribing with language='{language or 'auto'}' and beam_size={beam_size} "
             f"condition_on_previous_text={condition_on_previous_text} "
-            f"vad_filter={vad_filter} no_speech_threshold={no_speech_threshold} "
+            f"vad_filter={VAD_FILTER} no_speech_threshold={NO_SPEECH_THRESHOLD} "
             f"hotwords='{hotwords or ''}'"
         )
         stop_event, heartbeat_thread = start_heartbeat("Transcription", heartbeat_seconds)
@@ -396,8 +393,8 @@ def transcribe_with_faster_whisper(
             language=language,
             beam_size=beam_size,
             condition_on_previous_text=condition_on_previous_text,
-            vad_filter=vad_filter,
-            no_speech_threshold=no_speech_threshold,
+            vad_filter=VAD_FILTER,
+            no_speech_threshold=NO_SPEECH_THRESHOLD,
             hotwords=hotwords,
             log_progress=True,
         )
@@ -434,8 +431,6 @@ def transcribe_audio(
     device: str,
     beam_size: int,
     condition_on_previous_text: bool,
-    vad_filter: bool,
-    no_speech_threshold: float,
     hotwords: str | None,
     heartbeat_seconds: int,
     language: str | None,
@@ -447,8 +442,6 @@ def transcribe_audio(
         device,
         beam_size,
         condition_on_previous_text,
-        vad_filter,
-        no_speech_threshold,
         hotwords,
         heartbeat_seconds,
         language,
@@ -781,8 +774,7 @@ def build_transcript_payload(
     device: str,
     beam_size: int,
     condition_on_previous_text: bool,
-    vad_filter: bool,
-    no_speech_threshold: float,
+    chunk_seconds: int,
     hotwords: str | None,
     language: str | None,
     diarization_enabled: bool,
@@ -807,8 +799,8 @@ def build_transcript_payload(
         "device": device,
         "beam_size": beam_size,
         "condition_on_previous_text": condition_on_previous_text,
-        "vad_filter": vad_filter,
-        "no_speech_threshold": no_speech_threshold,
+        "vad_filter": VAD_FILTER,
+        "no_speech_threshold": NO_SPEECH_THRESHOLD,
         "chunk_seconds": chunk_seconds,
         "hotwords": hotwords,
         "language": language,
@@ -851,8 +843,6 @@ def process_audio_url(
         "TRANSCRIBE_CONDITION_ON_PREVIOUS_TEXT",
         DEFAULT_CONDITION_ON_PREVIOUS_TEXT,
     )
-    vad_filter = bool_env("TRANSCRIBE_VAD_FILTER", DEFAULT_VAD_FILTER)
-    no_speech_threshold = float_env("TRANSCRIBE_NO_SPEECH_THRESHOLD", DEFAULT_NO_SPEECH_THRESHOLD)
     chunk_seconds = int_env("TRANSCRIBE_CHUNK_SECONDS", DEFAULT_CHUNK_SECONDS)
     heartbeat_seconds = int_env("TRANSCRIBE_PROGRESS_HEARTBEAT_SECONDS", DEFAULT_PROGRESS_HEARTBEAT_SECONDS)
     hotwords = os.getenv("TRANSCRIBE_HOTWORDS", DEFAULT_HOTWORDS) or None
@@ -875,7 +865,7 @@ def process_audio_url(
         "Starting transcription "
         f"engine='faster-whisper' model='{model_size}' device='{device}' compute_type='{compute_type}' beam_size={beam_size} "
         f"condition_on_previous_text={condition_on_previous_text} "
-        f"vad_filter={vad_filter} no_speech_threshold={no_speech_threshold} "
+        f"vad_filter={VAD_FILTER} no_speech_threshold={NO_SPEECH_THRESHOLD} "
         f"chunk_seconds={chunk_seconds} "
         f"language='{language or 'auto'}' "
         f"heartbeat='{format_seconds(heartbeat_seconds) if heartbeat_seconds > 0 else 'off'}' "
@@ -933,8 +923,6 @@ def process_audio_url(
                     device,
                     beam_size,
                     condition_on_previous_text,
-                    vad_filter,
-                    no_speech_threshold,
                     hotwords,
                     heartbeat_seconds,
                     language,
@@ -991,8 +979,6 @@ def process_audio_url(
                 device,
                 beam_size,
                 condition_on_previous_text,
-                vad_filter,
-                no_speech_threshold,
                 hotwords,
                 heartbeat_seconds,
                 language,
@@ -1060,8 +1046,6 @@ def process_audio_url(
             device,
             beam_size,
             condition_on_previous_text,
-            vad_filter,
-            no_speech_threshold,
             chunk_seconds,
             hotwords,
             language,
