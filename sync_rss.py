@@ -15,7 +15,7 @@ from dotenv import load_dotenv
 from ingest_transcript import ingest_transcript_file
 
 
-DEFAULT_RSS_URL = "https://rss.beehiiv.com/podcasts/019d2587-e790-7b44-bb7a-6eebcaae225c.xml"
+DEFAULT_RSS_URL = ""
 DEFAULT_SYNC_MAX_EPISODES = 10
 DEFAULT_SYNC_MAX_RUNTIME_SECONDS = 19800
 USER_AGENT = "AppleCoreMedia"
