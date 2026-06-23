@@ -8,7 +8,7 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-podcast_rag}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-podcast_rag}
     ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+      - "${POSTGRES_BIND_ADDRESS:-127.0.0.1}:${POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./db/migrations:/docker-entrypoint-initdb.d:ro
@@ -17,6 +17,39 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile.app
+    image: podcast-rag-app
+    profiles:
+      - tools
+    env_file:
+      - ${APP_ENV_FILE:-.env}
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-podcast_rag}:${POSTGRES_PASSWORD:-podcast_rag}@postgres:5432/${POSTGRES_DB:-podcast_rag}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: ["python", "sync_rss.py"]
+
+  scheduler:
+    build:
+      context: .
+      dockerfile: Dockerfile.app
+    image: podcast-rag-app
+    restart: unless-stopped
+    profiles:
+      - scheduler
+    env_file:
+      - ${APP_ENV_FILE:-.env}
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-podcast_rag}:${POSTGRES_PASSWORD:-podcast_rag}@postgres:5432/${POSTGRES_DB:-podcast_rag}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: ["python", "sync_scheduler.py"]
 
 volumes:
   postgres_data:
