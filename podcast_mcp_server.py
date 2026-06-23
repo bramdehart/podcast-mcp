@@ -20,13 +20,27 @@ mcp = FastMCP("podcast-rag")
 
 @mcp.tool()
 def search_podcast_transcripts(query: str, limit: int = 5, episode_id: str | None = None) -> list[dict[str, Any]]:
-    """Search podcast transcript chunks by semantic similarity."""
+    """
+    Search podcast transcript chunks by semantic similarity.
+
+    Speaker attribution guidance:
+    - Treat speaker_name as certain only when speaker_confidence >= 0.85.
+    - For 0.60 <= speaker_confidence < 0.85, phrase attribution as likely/probable in the user's language.
+    - Below 0.60, avoid firm attribution and mention that the speaker identity is uncertain.
+    """
     return search_podcast_transcripts_data(query=query, limit=limit, episode_id=episode_id)
 
 
 @mcp.tool()
 def get_episode(episode_id: str | None = None, audio_url: str | None = None) -> dict[str, Any]:
-    """Get episode metadata and speaker mappings by episode id or audio URL."""
+    """
+    Get episode metadata and speaker mappings by episode id or audio URL.
+
+    Speaker attribution guidance:
+    - Treat speaker_name as certain only when speaker_confidence >= 0.85.
+    - For 0.60 <= speaker_confidence < 0.85, phrase attribution as likely/probable in the user's language.
+    - Below 0.60, avoid firm attribution and mention that the speaker identity is uncertain.
+    """
     return get_episode_data(episode_id=episode_id, audio_url=audio_url)
 
 
@@ -36,7 +50,14 @@ def get_transcript_around_timestamp(
     timestamp_seconds: float,
     context_seconds: int = 60,
 ) -> dict[str, Any]:
-    """Get transcript segments around a timestamp in an episode."""
+    """
+    Get transcript segments around a timestamp in an episode.
+
+    Speaker attribution guidance:
+    - Treat speaker_name as certain only when speaker_confidence >= 0.85.
+    - For 0.60 <= speaker_confidence < 0.85, phrase attribution as likely/probable in the user's language.
+    - Below 0.60, avoid firm attribution and mention that the speaker identity is uncertain.
+    """
     return get_transcript_around_timestamp_data(
         episode_id=episode_id,
         timestamp_seconds=timestamp_seconds,
@@ -58,7 +79,14 @@ def search_by_speaker(
     episode_id: str | None = None,
     limit: int = 5,
 ) -> list[dict[str, Any]]:
-    """Search or list transcript chunks spoken by a speaker."""
+    """
+    Search or list transcript chunks spoken by a speaker.
+
+    Speaker attribution guidance:
+    - Treat speaker_name as certain only when speaker_confidence >= 0.85.
+    - For 0.60 <= speaker_confidence < 0.85, phrase attribution as likely/probable in the user's language.
+    - Below 0.60, avoid firm attribution and mention that the speaker identity is uncertain.
+    """
     return search_by_speaker_data(
         speaker_name=speaker_name,
         speaker_id=speaker_id,

@@ -10,6 +10,14 @@ This project exposes the indexed podcast database as MCP tools.
 - `list_episodes` lists indexed episodes.
 - `search_by_speaker` searches or lists chunks spoken by a specific speaker.
 
+## Speaker attribution
+
+Speaker names are inferred from diarization and transcript context. Use `speaker_confidence` when answering:
+
+- Treat `speaker_name` as certain only when `speaker_confidence >= 0.85`.
+- For `0.60 <= speaker_confidence < 0.85`, phrase attribution as likely/probable in the user's language.
+- Below `0.60`, avoid firm attribution and mention that the speaker identity is uncertain.
+
 ## Requirements
 
 The tools expect:
