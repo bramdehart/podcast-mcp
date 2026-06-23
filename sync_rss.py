@@ -3,6 +3,7 @@ import os
 import re
 import subprocess
 import sys
+import time
 import xml.etree.ElementTree as ET
 from email.utils import parsedate_to_datetime
 from html import unescape
@@ -15,6 +16,8 @@ from ingest_transcript import ingest_transcript_file
 
 
 DEFAULT_RSS_URL = "https://rss.beehiiv.com/podcasts/019d2587-e790-7b44-bb7a-6eebcaae225c.xml"
+DEFAULT_SYNC_MAX_EPISODES = 1
+DEFAULT_SYNC_MAX_RUNTIME_SECONDS = 6 * 60 * 60
 USER_AGENT = "AppleCoreMedia"
 TRANSCRIBE_SCRIPT = Path(__file__).with_name("transcribe.py")
 RUNPOD_CLIENT_SCRIPT = Path(__file__).with_name("runpod_client.py")
@@ -47,6 +50,13 @@ def clean_description(value: str | None) -> str | None:
     text = re.sub(r"<[^>]+>", " ", unescape(value))
     text = re.sub(r"\s+", " ", text).strip()
     return text or None
+
+
+def int_env(name: str, default: int) -> int:
+    value = os.getenv(name)
+    if value is None or value == "":
+        return default
+    return int(value)
 
 
 def parse_duration(value: str | None) -> int | None:
@@ -159,6 +169,7 @@ def transcribe_episode(
 
 def main() -> int:
     load_dotenv()
+    started_at = time.monotonic()
 
     database_url = os.getenv("DATABASE_URL")
     if not database_url:
@@ -166,20 +177,44 @@ def main() -> int:
         return 1
 
     rss_url = os.getenv("RSS_URL", DEFAULT_RSS_URL)
+    max_episodes = int_env("SYNC_MAX_EPISODES", DEFAULT_SYNC_MAX_EPISODES)
+    max_runtime_seconds = int_env("SYNC_MAX_RUNTIME_SECONDS", DEFAULT_SYNC_MAX_RUNTIME_SECONDS)
     xml_data = fetch_rss_xml(rss_url)
     rss_episodes = parse_episode_items(xml_data)
     indexed_audio_urls = get_indexed_audio_urls(database_url)
+    synced_count = 0
 
     for episode in rss_episodes:
-        if episode["audio_url"] not in indexed_audio_urls:
-            print(episode["title"])
-            transcript_path = transcribe_episode(
-                str(episode["audio_url"]),
-                str(episode["description"]) if episode.get("description") else None,
-                str(episode["podcast_description"]) if episode.get("podcast_description") else None,
+        if episode["audio_url"] in indexed_audio_urls:
+            continue
+
+        elapsed_seconds = time.monotonic() - started_at
+        if max_runtime_seconds > 0 and elapsed_seconds >= max_runtime_seconds:
+            print(
+                f"Stopping sync: SYNC_MAX_RUNTIME_SECONDS={max_runtime_seconds} reached "
+                f"after {round(elapsed_seconds)}s with {synced_count} episode(s) synced.",
+                file=sys.stderr,
             )
-            ingest_transcript_file(transcript_path, episode, database_url)
-            return 0
+            break
+
+        if max_episodes > 0 and synced_count >= max_episodes:
+            print(
+                f"Stopping sync: SYNC_MAX_EPISODES={max_episodes} reached.",
+                file=sys.stderr,
+            )
+            break
+
+        print(episode["title"])
+        transcript_path = transcribe_episode(
+            str(episode["audio_url"]),
+            str(episode["description"]) if episode.get("description") else None,
+            str(episode["podcast_description"]) if episode.get("podcast_description") else None,
+        )
+        ingest_transcript_file(transcript_path, episode, database_url)
+        indexed_audio_urls.add(str(episode["audio_url"]))
+        synced_count += 1
+
+    print(f"Sync complete: {synced_count} episode(s) synced.", file=sys.stderr)
 
     return 0
 
