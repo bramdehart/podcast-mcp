@@ -29,7 +29,10 @@ USER_AGENT = "AppleCoreMedia"
 DEFAULT_MODEL_SIZE = "medium"
 DEFAULT_COMPUTE_TYPE = "int8"
 DEFAULT_DEVICE = "auto"
-DEFAULT_BEAM_SIZE = 1
+DEFAULT_BEAM_SIZE = 5
+DEFAULT_CONDITION_ON_PREVIOUS_TEXT = False
+DEFAULT_VAD_FILTER = True
+DEFAULT_NO_SPEECH_THRESHOLD = 0.5
 DEFAULT_HOTWORDS = ""
 DEFAULT_DIARIZATION_ENABLED = False
 DEFAULT_DIARIZATION_MODEL = "pyannote/speaker-diarization-3.1"
@@ -62,6 +65,13 @@ def int_env(name: str, default: int) -> int:
     if value is None or value == "":
         return default
     return int(value)
+
+
+def float_env(name: str, default: float) -> float:
+    value = os.getenv(name)
+    if value is None or value == "":
+        return default
+    return float(value)
 
 
 def optional_int_env(name: str, default: int | None = None) -> int | None:
@@ -271,6 +281,9 @@ def transcribe_with_faster_whisper(
     compute_type: str,
     device: str,
     beam_size: int,
+    condition_on_previous_text: bool,
+    vad_filter: bool,
+    no_speech_threshold: float,
     hotwords: str | None,
     heartbeat_seconds: int,
     language: str | None,
@@ -290,6 +303,8 @@ def transcribe_with_faster_whisper(
         started_at = time.monotonic()
         log(
             f"Transcribing with language='{language or 'auto'}' and beam_size={beam_size} "
+            f"condition_on_previous_text={condition_on_previous_text} "
+            f"vad_filter={vad_filter} no_speech_threshold={no_speech_threshold} "
             f"hotwords='{hotwords or ''}'"
         )
         stop_event, heartbeat_thread = start_heartbeat("Transcription", heartbeat_seconds)
@@ -297,6 +312,9 @@ def transcribe_with_faster_whisper(
             str(audio_path),
             language=language,
             beam_size=beam_size,
+            condition_on_previous_text=condition_on_previous_text,
+            vad_filter=vad_filter,
+            no_speech_threshold=no_speech_threshold,
             hotwords=hotwords,
             log_progress=True,
         )
@@ -332,6 +350,9 @@ def transcribe_audio(
     compute_type: str,
     device: str,
     beam_size: int,
+    condition_on_previous_text: bool,
+    vad_filter: bool,
+    no_speech_threshold: float,
     hotwords: str | None,
     heartbeat_seconds: int,
     language: str | None,
@@ -342,6 +363,9 @@ def transcribe_audio(
         compute_type,
         device,
         beam_size,
+        condition_on_previous_text,
+        vad_filter,
+        no_speech_threshold,
         hotwords,
         heartbeat_seconds,
         language,
@@ -673,6 +697,9 @@ def build_transcript_payload(
     compute_type: str,
     device: str,
     beam_size: int,
+    condition_on_previous_text: bool,
+    vad_filter: bool,
+    no_speech_threshold: float,
     hotwords: str | None,
     language: str | None,
     diarization_enabled: bool,
@@ -696,6 +723,9 @@ def build_transcript_payload(
         "compute_type": compute_type,
         "device": device,
         "beam_size": beam_size,
+        "condition_on_previous_text": condition_on_previous_text,
+        "vad_filter": vad_filter,
+        "no_speech_threshold": no_speech_threshold,
         "hotwords": hotwords,
         "language": language,
         "diarization_enabled": diarization_enabled,
@@ -733,6 +763,12 @@ def process_audio_url(
     compute_type = os.getenv("TRANSCRIBE_COMPUTE_TYPE", DEFAULT_COMPUTE_TYPE)
     device = os.getenv("TRANSCRIBE_DEVICE", DEFAULT_DEVICE)
     beam_size = int_env("TRANSCRIBE_BEAM_SIZE", DEFAULT_BEAM_SIZE)
+    condition_on_previous_text = bool_env(
+        "TRANSCRIBE_CONDITION_ON_PREVIOUS_TEXT",
+        DEFAULT_CONDITION_ON_PREVIOUS_TEXT,
+    )
+    vad_filter = bool_env("TRANSCRIBE_VAD_FILTER", DEFAULT_VAD_FILTER)
+    no_speech_threshold = float_env("TRANSCRIBE_NO_SPEECH_THRESHOLD", DEFAULT_NO_SPEECH_THRESHOLD)
     heartbeat_seconds = int_env("TRANSCRIBE_PROGRESS_HEARTBEAT_SECONDS", DEFAULT_PROGRESS_HEARTBEAT_SECONDS)
     hotwords = os.getenv("TRANSCRIBE_HOTWORDS", DEFAULT_HOTWORDS) or None
     language = os.getenv("TRANSCRIBE_LANGUAGE") or None
@@ -753,6 +789,8 @@ def process_audio_url(
     log(
         "Starting transcription "
         f"engine='faster-whisper' model='{model_size}' device='{device}' compute_type='{compute_type}' beam_size={beam_size} "
+        f"condition_on_previous_text={condition_on_previous_text} "
+        f"vad_filter={vad_filter} no_speech_threshold={no_speech_threshold} "
         f"language='{language or 'auto'}' "
         f"heartbeat='{format_seconds(heartbeat_seconds) if heartbeat_seconds > 0 else 'off'}' "
         f"diarization_enabled={diarization_enabled} "
@@ -773,6 +811,9 @@ def process_audio_url(
             compute_type,
             device,
             beam_size,
+            condition_on_previous_text,
+            vad_filter,
+            no_speech_threshold,
             hotwords,
             heartbeat_seconds,
             language,
@@ -837,6 +878,9 @@ def process_audio_url(
             compute_type,
             device,
             beam_size,
+            condition_on_previous_text,
+            vad_filter,
+            no_speech_threshold,
             hotwords,
             language,
             diarization_enabled,
