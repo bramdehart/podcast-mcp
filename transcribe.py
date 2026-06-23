@@ -36,11 +36,6 @@ DEFAULT_DIARIZATION_MODEL = "pyannote/speaker-diarization-3.1"
 DEFAULT_DIARIZATION_DEVICE = "auto"
 DEFAULT_DIARIZATION_MIN_SPEAKERS = 2
 DEFAULT_DIARIZATION_MAX_SPEAKERS = 4
-DEFAULT_DIARIZATION_QUALITY_CHECK_ENABLED = True
-DEFAULT_DIARIZATION_MAX_DOMINANT_SPEAKER_RATIO = 0.85
-DEFAULT_DIARIZATION_MIN_SECONDARY_SPEAKER_SECONDS = 120
-DEFAULT_DIARIZATION_RETRY_ENABLED = True
-DEFAULT_DIARIZATION_RETRY_NUM_SPEAKERS = "3,4"
 DEFAULT_SPEAKER_NAME_RESOLUTION_ENABLED = False
 DEFAULT_SPEAKER_NAME_MODEL = "gpt-5.4"
 DEFAULT_PROGRESS_HEARTBEAT_SECONDS = 60
@@ -69,29 +64,11 @@ def int_env(name: str, default: int) -> int:
     return int(value)
 
 
-def float_env(name: str, default: float) -> float:
-    value = os.getenv(name)
-    if value is None or value == "":
-        return default
-    return float(value)
-
-
 def optional_int_env(name: str, default: int | None = None) -> int | None:
     value = os.getenv(name)
     if value is None or value == "":
         return default
     return int(value)
-
-
-def int_list_env(name: str, default: str) -> list[int]:
-    value = os.getenv(name, default)
-    numbers = []
-    for part in value.split(","):
-        part = part.strip()
-        if not part:
-            continue
-        numbers.append(int(part))
-    return numbers
 
 
 def bool_env(name: str, default: bool) -> bool:
@@ -377,7 +354,6 @@ def run_diarization(
     diarization_device: str,
     min_speakers: int | None,
     max_speakers: int | None,
-    num_speakers: int | None = None,
 ) -> list[dict[str, object]]:
     import soundfile
     import torch
@@ -432,11 +408,9 @@ def run_diarization(
         f"shape={tuple(waveform.shape)} sample_rate={sample_rate}"
     )
     diarization_options = {}
-    if num_speakers is not None:
-        diarization_options["num_speakers"] = num_speakers
-    elif min_speakers is not None:
+    if min_speakers is not None:
         diarization_options["min_speakers"] = min_speakers
-    if num_speakers is None and max_speakers is not None:
+    if max_speakers is not None:
         diarization_options["max_speakers"] = max_speakers
     log(f"Running pyannote with options={diarization_options}")
     diarization = pipeline({"waveform": waveform, "sample_rate": sample_rate}, **diarization_options)
@@ -497,99 +471,6 @@ def align_segments_with_speakers(
         aligned_segments.append(aligned_segment)
 
     return aligned_segments
-
-
-def diarization_speaker_stats(segments: list[dict[str, object]]) -> dict[str, object]:
-    speaker_seconds: dict[str, float] = {}
-    for segment in segments:
-        speaker_id = segment.get("speaker_id")
-        start = number_value(segment.get("start"))
-        end = number_value(segment.get("end"))
-        if not speaker_id or start is None or end is None or end <= start:
-            continue
-        speaker_seconds[str(speaker_id)] = speaker_seconds.get(str(speaker_id), 0.0) + (end - start)
-
-    ranked = sorted(speaker_seconds.items(), key=lambda item: item[1], reverse=True)
-    total_seconds = sum(speaker_seconds.values())
-    dominant_speaker_id = ranked[0][0] if ranked else None
-    dominant_seconds = ranked[0][1] if ranked else 0.0
-    secondary_seconds = ranked[1][1] if len(ranked) > 1 else 0.0
-    dominant_ratio = dominant_seconds / total_seconds if total_seconds else 0.0
-
-    return {
-        "speaker_count": len(ranked),
-        "total_seconds": round(total_seconds, 3),
-        "dominant_speaker_id": dominant_speaker_id,
-        "dominant_seconds": round(dominant_seconds, 3),
-        "dominant_ratio": round(dominant_ratio, 4),
-        "secondary_seconds": round(secondary_seconds, 3),
-        "speakers": [
-            {
-                "speaker_id": speaker_id,
-                "seconds": round(seconds, 3),
-                "ratio": round(seconds / total_seconds, 4) if total_seconds else 0.0,
-            }
-            for speaker_id, seconds in ranked
-        ],
-    }
-
-
-def diarization_quality_result(segments: list[dict[str, object]]) -> dict[str, object]:
-    stats = diarization_speaker_stats(segments)
-    enabled = bool_env("DIARIZATION_QUALITY_CHECK_ENABLED", DEFAULT_DIARIZATION_QUALITY_CHECK_ENABLED)
-    max_dominant_ratio = float_env(
-        "DIARIZATION_MAX_DOMINANT_SPEAKER_RATIO",
-        DEFAULT_DIARIZATION_MAX_DOMINANT_SPEAKER_RATIO,
-    )
-    min_secondary_seconds = int_env(
-        "DIARIZATION_MIN_SECONDARY_SPEAKER_SECONDS",
-        DEFAULT_DIARIZATION_MIN_SECONDARY_SPEAKER_SECONDS,
-    )
-    dominant_ratio = float(stats["dominant_ratio"])
-    secondary_seconds = float(stats["secondary_seconds"])
-    low_quality = bool(
-        enabled
-        and stats["speaker_count"] >= 2
-        and dominant_ratio > max_dominant_ratio
-        and secondary_seconds < min_secondary_seconds
-    )
-    reason = None
-    if low_quality:
-        reason = (
-            f"Dominant speaker {stats['dominant_speaker_id']} has {dominant_ratio:.1%} of diarized speech "
-            f"and the second speaker has only {format_seconds(secondary_seconds)}."
-        )
-
-    return {
-        "enabled": enabled,
-        "low_quality": low_quality,
-        "reason": reason,
-        "max_dominant_speaker_ratio": max_dominant_ratio,
-        "min_secondary_speaker_seconds": min_secondary_seconds,
-        **stats,
-    }
-
-
-def diarization_quality_score(quality: dict[str, object]) -> tuple[int, float, float, int]:
-    low_quality_penalty = 0 if quality.get("low_quality") else 1
-    secondary_seconds = float(quality.get("secondary_seconds") or 0)
-    dominant_ratio = float(quality.get("dominant_ratio") or 1)
-    speaker_count = int(quality.get("speaker_count") or 0)
-    return (
-        low_quality_penalty,
-        secondary_seconds,
-        -dominant_ratio,
-        speaker_count,
-    )
-
-
-def should_replace_diarization_quality(
-    current_quality: dict[str, object] | None,
-    candidate_quality: dict[str, object],
-) -> bool:
-    if current_quality is None:
-        return True
-    return diarization_quality_score(candidate_quality) > diarization_quality_score(current_quality)
 
 
 def chronological_excerpt_lines(segments: list[dict[str, object]], max_lines: int = 160) -> list[str]:
@@ -798,7 +679,6 @@ def build_transcript_payload(
     diarization_model: str,
     diarization_device: str,
     diarization_turns: list[dict[str, object]],
-    diarization_quality: dict[str, object] | None,
     speaker_name_resolution_enabled: bool,
     speaker_name_model: str,
     speaker_mapping: dict[str, dict[str, object]],
@@ -822,7 +702,6 @@ def build_transcript_payload(
         "diarization_model": diarization_model if diarization_enabled else None,
         "diarization_device": diarization_device if diarization_enabled else None,
         "diarization_turns": diarization_turns,
-        "diarization_quality": diarization_quality,
         "speaker_name_resolution_enabled": speaker_name_resolution_enabled,
         "speaker_name_model": speaker_name_model if speaker_name_resolution_enabled else None,
         "speaker_mapping": speaker_mapping,
@@ -899,10 +778,8 @@ def process_audio_url(
             language,
         )
         processing["transcription_seconds"] = round(time.monotonic() - transcription_started_at, 3)
-        transcript_segments = segments
 
         diarization_turns = []
-        diarization_quality = None
         speaker_mapping = {}
         if diarization_enabled:
             diarization_started_at = time.monotonic()
@@ -914,65 +791,6 @@ def process_audio_url(
                 diarization_max_speakers,
             )
             processing["diarization_seconds"] = round(time.monotonic() - diarization_started_at, 3)
-            segments = align_segments_with_speakers(segments, diarization_turns)
-            diarization_quality = diarization_quality_result(segments)
-            log(
-                "Diarization quality "
-                f"low_quality={diarization_quality['low_quality']} "
-                f"dominant_speaker={diarization_quality['dominant_speaker_id']} "
-                f"dominant_ratio={diarization_quality['dominant_ratio']} "
-                f"secondary_seconds={diarization_quality['secondary_seconds']}"
-            )
-            if (
-                diarization_quality.get("low_quality")
-                and bool_env("DIARIZATION_RETRY_ENABLED", DEFAULT_DIARIZATION_RETRY_ENABLED)
-            ):
-                retry_started_at = time.monotonic()
-                best_turns = diarization_turns
-                best_segments = segments
-                best_quality = diarization_quality
-                for retry_num_speakers in int_list_env(
-                    "DIARIZATION_RETRY_NUM_SPEAKERS",
-                    DEFAULT_DIARIZATION_RETRY_NUM_SPEAKERS,
-                ):
-                    log(f"Retrying diarization with num_speakers={retry_num_speakers}")
-                    candidate_turns = run_diarization(
-                        wav_path,
-                        diarization_model,
-                        diarization_device,
-                        None,
-                        None,
-                        retry_num_speakers,
-                    )
-                    candidate_segments = align_segments_with_speakers(transcript_segments, candidate_turns)
-                    candidate_quality = diarization_quality_result(candidate_segments)
-                    candidate_quality["retry_num_speakers"] = retry_num_speakers
-                    log(
-                        "Diarization retry quality "
-                        f"num_speakers={retry_num_speakers} "
-                        f"low_quality={candidate_quality['low_quality']} "
-                        f"dominant_speaker={candidate_quality['dominant_speaker_id']} "
-                        f"dominant_ratio={candidate_quality['dominant_ratio']} "
-                        f"secondary_seconds={candidate_quality['secondary_seconds']}"
-                    )
-                    if should_replace_diarization_quality(best_quality, candidate_quality):
-                        best_turns = candidate_turns
-                        best_segments = candidate_segments
-                        best_quality = candidate_quality
-
-                if best_quality is not diarization_quality:
-                    diarization_turns = best_turns
-                    segments = best_segments
-                    diarization_quality = best_quality
-                    log(
-                        "Selected diarization retry "
-                        f"num_speakers={diarization_quality.get('retry_num_speakers')} "
-                        f"low_quality={diarization_quality['low_quality']} "
-                        f"dominant_ratio={diarization_quality['dominant_ratio']} "
-                        f"secondary_seconds={diarization_quality['secondary_seconds']}"
-                    )
-                processing["diarization_retry_seconds"] = round(time.monotonic() - retry_started_at, 3)
-
             if write_files:
                 write_json(
                     diarization_path,
@@ -982,44 +800,34 @@ def process_audio_url(
                         "diarization_device": diarization_device,
                         "min_speakers": diarization_min_speakers,
                         "max_speakers": diarization_max_speakers,
-                        "retry_num_speakers": (
-                            diarization_quality.get("retry_num_speakers")
-                            if diarization_quality
-                            else None
-                        ),
-                        "quality": diarization_quality,
                         "turns": diarization_turns,
                     },
                 )
                 log(f"Wrote diarization JSON to {diarization_path}")
+            segments = align_segments_with_speakers(segments, diarization_turns)
 
         if diarization_enabled and speaker_name_resolution_enabled:
-            if diarization_quality and diarization_quality.get("low_quality"):
-                speaker_name_resolution_enabled = False
-                processing["speaker_name_resolution_skipped_seconds"] = 0.0
-                log(f"Skipping speaker name resolution: {diarization_quality.get('reason')}")
-            else:
-                speaker_mapping_started_at = time.monotonic()
-                speaker_mapping = resolve_speaker_names(
-                    segments,
-                    speaker_name_model,
-                    episode_description,
-                    podcast_description,
+            speaker_mapping_started_at = time.monotonic()
+            speaker_mapping = resolve_speaker_names(
+                segments,
+                speaker_name_model,
+                episode_description,
+                podcast_description,
+            )
+            processing["speaker_name_resolution_seconds"] = round(time.monotonic() - speaker_mapping_started_at, 3)
+            if write_files:
+                write_json(
+                    speaker_mapping_path,
+                    {
+                        "audio_url": audio_url,
+                        "podcast_description": podcast_description,
+                        "episode_description": episode_description,
+                        "speaker_name_model": speaker_name_model,
+                        "speaker_mapping": speaker_mapping,
+                    },
                 )
-                processing["speaker_name_resolution_seconds"] = round(time.monotonic() - speaker_mapping_started_at, 3)
-                if write_files:
-                    write_json(
-                        speaker_mapping_path,
-                        {
-                            "audio_url": audio_url,
-                            "podcast_description": podcast_description,
-                            "episode_description": episode_description,
-                            "speaker_name_model": speaker_name_model,
-                            "speaker_mapping": speaker_mapping,
-                        },
-                    )
-                    log(f"Wrote speaker mapping JSON to {speaker_mapping_path}")
-                segments = apply_speaker_mapping(segments, speaker_mapping)
+                log(f"Wrote speaker mapping JSON to {speaker_mapping_path}")
+            segments = apply_speaker_mapping(segments, speaker_mapping)
 
         payload = build_transcript_payload(
             audio_url,
@@ -1035,7 +843,6 @@ def process_audio_url(
             diarization_model,
             diarization_device,
             diarization_turns,
-            diarization_quality,
             speaker_name_resolution_enabled,
             speaker_name_model,
             speaker_mapping,
