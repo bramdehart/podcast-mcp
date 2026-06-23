@@ -16,7 +16,9 @@ Create a server-local env file, for example `.env.production`. Do not commit it.
 ### Required on Hetzner
 
 ```env
-DATABASE_URL=postgresql://podcast_rag:<password>@postgres:5432/podcast_rag
+POSTGRES_DB=podcast_rag
+POSTGRES_USER=podcast_rag
+POSTGRES_PASSWORD=<strong-postgres-password>
 RSS_URL=https://example.com/feed.xml
 SYNC_CRON=0 6 * * 5
 SYNC_TIMEZONE=Europe/Amsterdam
@@ -31,6 +33,10 @@ RUNPOD_POLL_INTERVAL_SECONDS=10
 RUNPOD_EXECUTION_TIMEOUT_MS=1800000
 RUNPOD_TTL_MS=3600000
 ```
+
+`DATABASE_URL` is optional when running through Docker Compose. Compose builds the
+internal app database URL from `POSTGRES_DB`, `POSTGRES_USER`, and
+`POSTGRES_PASSWORD`, using the private Docker hostname `postgres`.
 
 ### Required on RunPod worker
 
