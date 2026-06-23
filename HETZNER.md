@@ -38,6 +38,8 @@ MCP_HOST=0.0.0.0
 MCP_PORT=8000
 MCP_PUBLIC_URL=https://mcp.example.com
 MCP_BEARER_TOKEN=<strong-mcp-token>
+MCP_RATE_LIMIT_REQUESTS=60
+MCP_RATE_LIMIT_WINDOW_SECONDS=60
 ```
 
 `DATABASE_URL` is optional when running through Docker Compose. Compose builds the
