@@ -11,6 +11,7 @@ import sys
 import threading
 import time
 import warnings
+import wave
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -33,6 +34,7 @@ DEFAULT_BEAM_SIZE = 5
 DEFAULT_CONDITION_ON_PREVIOUS_TEXT = False
 DEFAULT_VAD_FILTER = True
 DEFAULT_NO_SPEECH_THRESHOLD = 0.5
+DEFAULT_CHUNK_SECONDS = 1800
 DEFAULT_HOTWORDS = ""
 DEFAULT_DIARIZATION_ENABLED = False
 DEFAULT_DIARIZATION_MODEL = "pyannote/speaker-diarization-3.1"
@@ -217,6 +219,11 @@ def wav_path_for_audio(audio_url: str) -> Path:
     return TMP_DIR / f"podcast_audio_{audio_hash}.wav"
 
 
+def chunk_wav_path_for_audio(audio_url: str, chunk_index: int) -> Path:
+    audio_hash = hashlib.sha256(audio_url.encode("utf-8")).hexdigest()[:16]
+    return TMP_DIR / f"podcast_audio_{audio_hash}_chunk_{chunk_index:03d}.wav"
+
+
 def metadata_paths(audio_url: str) -> tuple[Path, Path]:
     audio_hash = hashlib.sha256(audio_url.encode("utf-8")).hexdigest()[:16]
     diarization_path = TMP_DIR / f"podcast_diarization_{audio_hash}.json"
@@ -265,6 +272,81 @@ def convert_audio_to_wav(audio_path: Path, wav_path: Path) -> float:
     return elapsed_seconds
 
 
+def wav_duration_seconds(wav_path: Path) -> float:
+    with wave.open(str(wav_path), "rb") as wav_file:
+        frame_count = wav_file.getnframes()
+        frame_rate = wav_file.getframerate()
+        return frame_count / frame_rate
+
+
+def split_wav_chunk(source_wav_path: Path, chunk_wav_path: Path, offset_seconds: float, duration_seconds: float) -> float:
+    started_at = time.monotonic()
+    log(
+        f"Creating WAV chunk {chunk_wav_path.name} "
+        f"from {format_seconds(offset_seconds)} for {format_seconds(duration_seconds)}"
+    )
+    subprocess.run(
+        [
+            "ffmpeg",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-y",
+            "-ss",
+            str(offset_seconds),
+            "-t",
+            str(duration_seconds),
+            "-i",
+            str(source_wav_path),
+            "-c",
+            "copy",
+            str(chunk_wav_path),
+        ],
+        check=True,
+    )
+    elapsed_seconds = time.monotonic() - started_at
+    log(
+        f"Created WAV chunk {chunk_wav_path.name} "
+        f"{chunk_wav_path.stat().st_size / 1024 / 1024:.1f} MB in {format_seconds(elapsed_seconds)}"
+    )
+    return elapsed_seconds
+
+
+def offset_segments(segments: list[dict[str, object]], offset_seconds: float) -> list[dict[str, object]]:
+    offset_result = []
+    for segment in segments:
+        updated_segment = dict(segment)
+        start = number_value(segment.get("start"))
+        end = number_value(segment.get("end"))
+        if start is not None:
+            updated_segment["start"] = start + offset_seconds
+        if end is not None:
+            updated_segment["end"] = end + offset_seconds
+        offset_result.append(updated_segment)
+    return offset_result
+
+
+def offset_diarization_turns(
+    turns: list[dict[str, object]],
+    offset_seconds: float,
+    chunk_index: int,
+) -> list[dict[str, object]]:
+    offset_result = []
+    for turn in turns:
+        updated_turn = dict(turn)
+        start = number_value(turn.get("start"))
+        end = number_value(turn.get("end"))
+        speaker_id = turn.get("speaker_id")
+        if start is not None:
+            updated_turn["start"] = start + offset_seconds
+        if end is not None:
+            updated_turn["end"] = end + offset_seconds
+        if speaker_id:
+            updated_turn["speaker_id"] = f"CHUNK_{chunk_index:03d}_{speaker_id}"
+        offset_result.append(updated_turn)
+    return offset_result
+
+
 def number_value(value: object) -> float | None:
     if isinstance(value, int | float):
         return float(value)
@@ -284,6 +366,7 @@ def transcribe_with_faster_whisper(
     condition_on_previous_text: bool,
     vad_filter: bool,
     no_speech_threshold: float,
+    chunk_seconds: int,
     hotwords: str | None,
     heartbeat_seconds: int,
     language: str | None,
@@ -726,6 +809,7 @@ def build_transcript_payload(
         "condition_on_previous_text": condition_on_previous_text,
         "vad_filter": vad_filter,
         "no_speech_threshold": no_speech_threshold,
+        "chunk_seconds": chunk_seconds,
         "hotwords": hotwords,
         "language": language,
         "diarization_enabled": diarization_enabled,
@@ -769,6 +853,7 @@ def process_audio_url(
     )
     vad_filter = bool_env("TRANSCRIBE_VAD_FILTER", DEFAULT_VAD_FILTER)
     no_speech_threshold = float_env("TRANSCRIBE_NO_SPEECH_THRESHOLD", DEFAULT_NO_SPEECH_THRESHOLD)
+    chunk_seconds = int_env("TRANSCRIBE_CHUNK_SECONDS", DEFAULT_CHUNK_SECONDS)
     heartbeat_seconds = int_env("TRANSCRIBE_PROGRESS_HEARTBEAT_SECONDS", DEFAULT_PROGRESS_HEARTBEAT_SECONDS)
     hotwords = os.getenv("TRANSCRIBE_HOTWORDS", DEFAULT_HOTWORDS) or None
     language = os.getenv("TRANSCRIBE_LANGUAGE") or None
@@ -791,6 +876,7 @@ def process_audio_url(
         f"engine='faster-whisper' model='{model_size}' device='{device}' compute_type='{compute_type}' beam_size={beam_size} "
         f"condition_on_previous_text={condition_on_previous_text} "
         f"vad_filter={vad_filter} no_speech_threshold={no_speech_threshold} "
+        f"chunk_seconds={chunk_seconds} "
         f"language='{language or 'auto'}' "
         f"heartbeat='{format_seconds(heartbeat_seconds) if heartbeat_seconds > 0 else 'off'}' "
         f"diarization_enabled={diarization_enabled} "
@@ -799,39 +885,134 @@ def process_audio_url(
         f"speaker_name_resolution_enabled={speaker_name_resolution_enabled}"
     )
     log_acceleration_status(device, diarization_device)
+    chunk_wav_paths: list[Path] = []
 
     try:
         processing: dict[str, float] = {}
         processing["download_seconds"] = round(download_audio(audio_url, audio_path), 3)
         processing["audio_conversion_seconds"] = round(convert_audio_to_wav(audio_path, wav_path), 3)
-        transcription_started_at = time.monotonic()
-        segments, info = transcribe_audio(
-            wav_path,
-            model_size,
-            compute_type,
-            device,
-            beam_size,
-            condition_on_previous_text,
-            vad_filter,
-            no_speech_threshold,
-            hotwords,
-            heartbeat_seconds,
-            language,
-        )
-        processing["transcription_seconds"] = round(time.monotonic() - transcription_started_at, 3)
-
+        audio_duration_seconds = wav_duration_seconds(wav_path)
+        processing["audio_duration_seconds"] = round(audio_duration_seconds, 3)
         diarization_turns = []
         speaker_mapping = {}
-        if diarization_enabled:
-            diarization_started_at = time.monotonic()
-            diarization_turns = run_diarization(
-                wav_path,
-                diarization_model,
-                diarization_device,
-                diarization_min_speakers,
-                diarization_max_speakers,
+        if chunk_seconds > 0 and audio_duration_seconds > chunk_seconds:
+            log(
+                f"Processing WAV in chunks of {format_seconds(chunk_seconds)} "
+                f"for total duration {format_seconds(audio_duration_seconds)}"
             )
-            processing["diarization_seconds"] = round(time.monotonic() - diarization_started_at, 3)
+            segments = []
+            first_info = None
+            chunk_index = 0
+            offset_seconds = 0.0
+            processing["chunk_count"] = 0
+            processing["chunk_creation_seconds"] = 0.0
+            processing["transcription_seconds"] = 0.0
+            if diarization_enabled:
+                processing["diarization_seconds"] = 0.0
+
+            while offset_seconds < audio_duration_seconds:
+                chunk_duration_seconds = min(chunk_seconds, audio_duration_seconds - offset_seconds)
+                chunk_wav_path = chunk_wav_path_for_audio(audio_url, chunk_index)
+                chunk_wav_paths.append(chunk_wav_path)
+                processing["chunk_creation_seconds"] = round(
+                    processing["chunk_creation_seconds"]
+                    + split_wav_chunk(wav_path, chunk_wav_path, offset_seconds, chunk_duration_seconds),
+                    3,
+                )
+                log(
+                    f"Processing chunk {chunk_index + 1} "
+                    f"offset={format_seconds(offset_seconds)} "
+                    f"duration={format_seconds(chunk_duration_seconds)}"
+                )
+
+                transcription_started_at = time.monotonic()
+                chunk_segments, chunk_info = transcribe_audio(
+                    chunk_wav_path,
+                    model_size,
+                    compute_type,
+                    device,
+                    beam_size,
+                    condition_on_previous_text,
+                    vad_filter,
+                    no_speech_threshold,
+                    hotwords,
+                    heartbeat_seconds,
+                    language,
+                )
+                processing["transcription_seconds"] = round(
+                    processing["transcription_seconds"] + time.monotonic() - transcription_started_at,
+                    3,
+                )
+                if first_info is None:
+                    first_info = chunk_info
+                segments.extend(offset_segments(chunk_segments, offset_seconds))
+
+                if diarization_enabled:
+                    diarization_started_at = time.monotonic()
+                    chunk_turns = run_diarization(
+                        chunk_wav_path,
+                        diarization_model,
+                        diarization_device,
+                        diarization_min_speakers,
+                        diarization_max_speakers,
+                    )
+                    processing["diarization_seconds"] = round(
+                        processing["diarization_seconds"] + time.monotonic() - diarization_started_at,
+                        3,
+                    )
+                    diarization_turns.extend(offset_diarization_turns(chunk_turns, offset_seconds, chunk_index))
+
+                if chunk_wav_path.exists():
+                    chunk_wav_path.unlink()
+                    log(f"Removed WAV chunk {chunk_wav_path}")
+
+                processing["chunk_count"] += 1
+                chunk_index += 1
+                offset_seconds += chunk_duration_seconds
+
+            info_get = (
+                first_info.get
+                if isinstance(first_info, dict)
+                else lambda key, default=None: getattr(first_info, key, default)
+            )
+            info = {
+                "language": info_get("language") if first_info is not None else language,
+                "language_probability": info_get("language_probability") if first_info is not None else None,
+                "duration": audio_duration_seconds,
+            }
+            if diarization_enabled:
+                segments = align_segments_with_speakers(segments, diarization_turns)
+        else:
+            transcription_started_at = time.monotonic()
+            segments, info = transcribe_audio(
+                wav_path,
+                model_size,
+                compute_type,
+                device,
+                beam_size,
+                condition_on_previous_text,
+                vad_filter,
+                no_speech_threshold,
+                hotwords,
+                heartbeat_seconds,
+                language,
+            )
+            processing["transcription_seconds"] = round(time.monotonic() - transcription_started_at, 3)
+
+            if diarization_enabled:
+                diarization_started_at = time.monotonic()
+                diarization_turns = run_diarization(
+                    wav_path,
+                    diarization_model,
+                    diarization_device,
+                    diarization_min_speakers,
+                    diarization_max_speakers,
+                )
+                processing["diarization_seconds"] = round(time.monotonic() - diarization_started_at, 3)
+                segments = align_segments_with_speakers(segments, diarization_turns)
+
+        speaker_mapping = {}
+        if diarization_enabled:
             if write_files:
                 write_json(
                     diarization_path,
@@ -841,11 +1022,11 @@ def process_audio_url(
                         "diarization_device": diarization_device,
                         "min_speakers": diarization_min_speakers,
                         "max_speakers": diarization_max_speakers,
+                        "chunk_seconds": chunk_seconds,
                         "turns": diarization_turns,
                     },
                 )
                 log(f"Wrote diarization JSON to {diarization_path}")
-            segments = align_segments_with_speakers(segments, diarization_turns)
 
         if diarization_enabled and speaker_name_resolution_enabled:
             speaker_mapping_started_at = time.monotonic()
@@ -881,6 +1062,7 @@ def process_audio_url(
             condition_on_previous_text,
             vad_filter,
             no_speech_threshold,
+            chunk_seconds,
             hotwords,
             language,
             diarization_enabled,
@@ -907,6 +1089,10 @@ def process_audio_url(
         if transcript_written and wav_path.exists():
             wav_path.unlink()
             log(f"Removed WAV file {wav_path}")
+        for chunk_wav_path in chunk_wav_paths:
+            if chunk_wav_path.exists():
+                chunk_wav_path.unlink()
+                log(f"Removed WAV chunk {chunk_wav_path}")
         cleanup_gpu_memory("transcription job")
 
     return payload, transcript_path
