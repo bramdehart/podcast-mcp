@@ -84,6 +84,13 @@ Run one manual RSS sync:
 APP_ENV_FILE=.env.production docker compose --profile tools run --rm app
 ```
 
+Resolve missing speaker names for already-ingested episodes without rerunning
+RunPod transcription or embeddings:
+
+```bash
+APP_ENV_FILE=.env.production docker compose --profile tools run --rm app python resolve_speaker_names_db.py
+```
+
 Start the scheduler:
 
 ```bash
