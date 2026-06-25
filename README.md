@@ -4,11 +4,11 @@ Speaker-aware MCP server for searchable podcast transcripts.
 
 This project indexes podcast episodes from an RSS feed, transcribes them, identifies speakers, stores semantic embeddings in Postgres/pgvector, and exposes read-only search and retrieval tools through MCP.
 
+![image](docs/sync-flow.png)
+
 ## Demo
 
 This repository powers a concrete production deployment for [AI Report](https://www.aireport.nl/). Over 170 hours of podcast episodes have been indexed and new episodes will be indexed automatically on release.
-
-![image](docs/dialog-example.png)
 
 Public MCP endpoint:
 
@@ -30,11 +30,6 @@ Example questions:
 - Geef transcriptcontext rond timestamp 12:34.
 
 The demo endpoint is read-only and rate-limited.
-
-## Synchronization flow
-
-![image](docs/sync-flow.png)
-
 
 ## MCP Tools
 
