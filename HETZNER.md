@@ -16,8 +16,8 @@ Create a server-local env file, for example `.env.production`. Do not commit it.
 ### Required on Hetzner
 
 ```env
-POSTGRES_DB=podcast_rag
-POSTGRES_USER=podcast_rag
+POSTGRES_DB=podcast_mcp
+POSTGRES_USER=podcast_mcp
 POSTGRES_PASSWORD=<strong-postgres-password>
 RSS_URL=https://example.com/feed.xml
 SYNC_CRON=0 6 * * 5
@@ -41,6 +41,10 @@ MCP_BEARER_TOKEN=<strong-mcp-token>
 MCP_RATE_LIMIT_REQUESTS=60
 MCP_RATE_LIMIT_WINDOW_SECONDS=60
 ```
+
+If this server was already running before the rename, keep the existing database
+credentials and set `COMPOSE_PROJECT_NAME=podcast-rag` in `.env.production`
+until you deliberately migrate the Docker volume, as described in `RENAME.md`.
 
 `DATABASE_URL` is optional when running through Docker Compose. Compose builds the
 internal app database URL from `POSTGRES_DB`, `POSTGRES_USER`, and
