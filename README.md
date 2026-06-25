@@ -6,7 +6,7 @@ This project indexes podcast episodes from an RSS feed, transcribes them, identi
 
 ## Demo
 
-This repository powers a concrete production deployment for **[AI Report](https://www.aireport.nl/)**. Over 170 hours of podcast episodes have been indexed.
+This repository powers a concrete production deployment for [AI Report](https://www.aireport.nl/). Over 170 hours of podcast episodes have been indexed.
 
 ![image](docs/dialog-example.png)
 
