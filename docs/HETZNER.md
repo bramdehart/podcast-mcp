@@ -7,7 +7,7 @@ GPU transcription and diarization stay on RunPod.
 
 - `postgres`: Postgres with pgvector and persistent `postgres_data` volume.
 - `app`: one-off container for manual commands such as RSS sync.
-- `scheduler`: long-running container that starts `sync_rss.py` based on `SYNC_CRON`.
+- `scheduler`: long-running container that starts `python -m podcast_mcp.ingest.rss` based on `SYNC_CRON`.
 
 ## Production environment
 
@@ -41,10 +41,6 @@ MCP_BEARER_TOKEN=<strong-mcp-token>
 MCP_RATE_LIMIT_REQUESTS=60
 MCP_RATE_LIMIT_WINDOW_SECONDS=60
 ```
-
-If this server was already running before the rename, keep the existing database
-credentials and set `COMPOSE_PROJECT_NAME=podcast-rag` in `.env.production`
-until you deliberately migrate the Docker volume, as described in `RENAME.md`.
 
 `DATABASE_URL` is optional when running through Docker Compose. Compose builds the
 internal app database URL from `POSTGRES_DB`, `POSTGRES_USER`, and
@@ -92,7 +88,7 @@ Resolve missing speaker names for already-ingested episodes without rerunning
 RunPod transcription or embeddings:
 
 ```bash
-APP_ENV_FILE=.env.production docker compose --profile tools run --rm app python resolve_speaker_names_db.py
+APP_ENV_FILE=.env.production docker compose --profile tools run --rm app python -m podcast_mcp.ingest.speaker_names
 ```
 
 Start the scheduler:

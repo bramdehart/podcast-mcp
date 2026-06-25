@@ -4,9 +4,9 @@ This setup moves the heavy audio processing to a RunPod Serverless worker:
 
 1. Download audio in the worker to `/tmp`.
 2. Transcribe with Faster Whisper.
-3. Optionally run pyannote diarization.
+3. Run pyannote diarization.
 4. Return transcript JSON to the local client.
-5. Optionally run speaker-name mapping locally via the OpenAI API.
+5. Run speaker-name mapping locally via the OpenAI API.
 6. The local client writes `/tmp/podcast_transcript_<hash>.json`.
 
 ## Local env
@@ -24,12 +24,15 @@ TRANSCRIBE_BEAM_SIZE=1
 DIARIZATION_ENABLED=true
 DIARIZATION_DEVICE=cuda
 HUGGINGFACE_TOKEN=...
+SPEAKER_NAME_RESOLUTION_ENABLED=true
+OPENAI_API_KEY=...
+SPEAKER_NAME_MODEL=gpt-5.4-mini
 ```
 
 After that, the existing RSS flow stays the same:
 
 ```bash
-python sync_rss.py
+PYTHONPATH=src python -m podcast_mcp.ingest.rss
 ```
 
 ## Worker image
@@ -70,5 +73,5 @@ This implementation therefore uses polling through the RunPod API. This also wor
 
 ## Speaker name mapping
 
-If `SPEAKER_NAME_RESOLUTION_ENABLED=true`, `runpod_client.py` runs speaker-name mapping locally after RunPod completes.
-This uses the OpenAI API, so set `OPENAI_API_KEY` and `SPEAKER_NAME_MODEL` locally.
+With `SPEAKER_NAME_RESOLUTION_ENABLED=true`, `python -m podcast_mcp.runpod.client` runs speaker-name mapping locally after RunPod completes.
+This uses the OpenAI API, so `OPENAI_API_KEY` and `SPEAKER_NAME_MODEL` must be set locally.

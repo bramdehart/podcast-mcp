@@ -35,7 +35,7 @@ Install dependencies after pulling changes:
 ## Run as MCP server
 
 ```bash
-.venv/bin/python podcast_mcp_server.py
+PYTHONPATH=src .venv/bin/python -m podcast_mcp.mcp.server
 ```
 
 Example Codex MCP config:
@@ -43,8 +43,9 @@ Example Codex MCP config:
 ```toml
 [mcp_servers.podcast-mcp]
 command = "/absolute/path/to/podcast-mcp/.venv/bin/python"
-args = ["/absolute/path/to/podcast-mcp/podcast_mcp_server.py"]
+args = ["-m", "podcast_mcp.mcp.server"]
 cwd = "/absolute/path/to/podcast-mcp"
+env = { PYTHONPATH = "/absolute/path/to/podcast-mcp/src" }
 ```
 
 ## Run from CLI
@@ -52,25 +53,25 @@ cwd = "/absolute/path/to/podcast-mcp"
 List indexed episodes:
 
 ```bash
-.venv/bin/python podcast_tools.py list-episodes
+PYTHONPATH=src .venv/bin/python -m podcast_mcp.mcp.tools list-episodes
 ```
 
 Semantic search:
 
 ```bash
-.venv/bin/python podcast_tools.py search "wat werd er gezegd over Anthropic?"
+PYTHONPATH=src .venv/bin/python -m podcast_mcp.mcp.tools search "wat werd er gezegd over Anthropic?"
 ```
 
 Fetch transcript context:
 
 ```bash
-.venv/bin/python podcast_tools.py around "<episode-id>" 1234 --context-seconds 90
+PYTHONPATH=src .venv/bin/python -m podcast_mcp.mcp.tools around "<episode-id>" 1234 --context-seconds 90
 ```
 
 Search by speaker:
 
 ```bash
-.venv/bin/python podcast_tools.py speaker --speaker-name "Alexander" --query "Anthropic"
+PYTHONPATH=src .venv/bin/python -m podcast_mcp.mcp.tools speaker --speaker-name "Alexander" --query "Anthropic"
 ```
 
 ## Scheduled RSS sync
@@ -85,5 +86,5 @@ SYNC_TIMEZONE=Europe/Amsterdam
 Run the scheduler:
 
 ```bash
-.venv/bin/python sync_scheduler.py
+PYTHONPATH=src .venv/bin/python -m podcast_mcp.ingest.scheduler
 ```

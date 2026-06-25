@@ -10,7 +10,7 @@ from uuid import UUID
 import psycopg
 from dotenv import load_dotenv
 
-from ingest_transcript import (
+from podcast_mcp.ingest.transcript import (
     DEFAULT_EMBEDDING_DIMENSIONS,
     DEFAULT_EMBEDDING_MODEL,
     embed_texts,

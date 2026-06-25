@@ -5,7 +5,7 @@ from typing import Iterator
 
 import runpod
 
-from transcribe import process_audio_url
+from podcast_mcp.transcribe.pipeline import process_audio_url
 
 
 ENV_KEYS = {

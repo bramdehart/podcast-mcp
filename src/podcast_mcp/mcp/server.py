@@ -13,7 +13,7 @@ from mcp.server.fastmcp import FastMCP
 from starlette.responses import PlainTextResponse
 from starlette.types import ASGIApp, Receive, Scope, Send
 
-from podcast_tools import (
+from podcast_mcp.mcp.tools import (
     get_episode as get_episode_data,
     get_transcript_around_timestamp as get_transcript_around_timestamp_data,
     list_episodes as list_episodes_data,

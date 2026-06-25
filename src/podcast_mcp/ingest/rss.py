@@ -12,15 +12,15 @@ from pathlib import Path
 import psycopg
 from dotenv import load_dotenv
 
-from ingest_transcript import ingest_transcript_file
+from podcast_mcp.ingest.transcript import ingest_transcript_file
 
 
 DEFAULT_RSS_URL = ""
 DEFAULT_SYNC_MAX_EPISODES = 10
 DEFAULT_SYNC_MAX_RUNTIME_SECONDS = 19800
 USER_AGENT = "AppleCoreMedia"
-TRANSCRIBE_SCRIPT = Path(__file__).with_name("transcribe.py")
-RUNPOD_CLIENT_SCRIPT = Path(__file__).with_name("runpod_client.py")
+TRANSCRIBE_MODULE = "podcast_mcp.transcribe.pipeline"
+RUNPOD_CLIENT_MODULE = "podcast_mcp.runpod.client"
 
 
 def fetch_rss_xml(url: str) -> bytes:
@@ -143,7 +143,7 @@ def transcribe_episode(
 ) -> Path:
     execution_mode = os.getenv("TRANSCRIBE_EXECUTION", "local").strip().lower()
     if execution_mode == "runpod":
-        command = [sys.executable, str(RUNPOD_CLIENT_SCRIPT), audio_url]
+        command = [sys.executable, "-m", RUNPOD_CLIENT_MODULE, audio_url]
         if podcast_description:
             command.extend(["--podcast-description", podcast_description])
         if episode_description:
@@ -158,7 +158,7 @@ def transcribe_episode(
     if execution_mode != "local":
         raise ValueError("TRANSCRIBE_EXECUTION must be 'local' or 'runpod'")
 
-    command = [sys.executable, str(TRANSCRIBE_SCRIPT), audio_url]
+    command = [sys.executable, "-m", TRANSCRIBE_MODULE, audio_url]
     if podcast_description:
         command.extend(["--podcast-description", podcast_description])
     if episode_description:

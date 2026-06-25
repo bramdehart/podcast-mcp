@@ -9,9 +9,9 @@ import psycopg
 from dotenv import load_dotenv
 from psycopg.rows import dict_row
 
-from runpod_client import resolve_speaker_names_locally
-from sync_rss import DEFAULT_RSS_URL, fetch_rss_xml, parse_episode_items
-from transcribe import DEFAULT_SPEAKER_NAME_MODEL
+from podcast_mcp.ingest.rss import DEFAULT_RSS_URL, fetch_rss_xml, parse_episode_items
+from podcast_mcp.runpod.client import resolve_speaker_names_locally
+from podcast_mcp.transcribe.pipeline import DEFAULT_SPEAKER_NAME_MODEL
 
 
 def log(message: str) -> None:

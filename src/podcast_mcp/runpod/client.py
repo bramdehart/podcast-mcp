@@ -9,7 +9,7 @@ from pathlib import Path
 import requests
 from dotenv import load_dotenv
 
-from transcribe import (
+from podcast_mcp.transcribe.pipeline import (
     DEFAULT_SPEAKER_NAME_MODEL,
     DEFAULT_SPEAKER_NAME_RESOLUTION_ENABLED,
     apply_speaker_mapping,

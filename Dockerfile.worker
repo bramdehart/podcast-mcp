@@ -3,6 +3,7 @@ FROM pytorch/pytorch:2.9.0-cuda12.8-cudnn9-runtime
 WORKDIR /app
 
 ENV PYTHONUNBUFFERED=1
+ENV PYTHONPATH=/app/src
 ENV MPLCONFIGDIR=/tmp/matplotlib
 ENV TRANSCRIBE_MODEL=medium
 ENV TRANSCRIBE_DEVICE=cuda
@@ -22,6 +23,6 @@ RUN apt-get update \
 COPY requirements-runpod.txt .
 RUN pip install --no-cache-dir -r requirements-runpod.txt
 
-COPY transcribe.py runpod_worker.py ./
+COPY src ./src
 
-CMD ["python", "-u", "runpod_worker.py"]
+CMD ["python", "-u", "-m", "podcast_mcp.runpod.worker"]

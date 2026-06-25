@@ -4,7 +4,6 @@ import subprocess
 import sys
 import time
 from datetime import datetime
-from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from croniter import croniter
@@ -13,7 +12,7 @@ from dotenv import load_dotenv
 
 DEFAULT_SYNC_CRON = "0 6 * * 5"
 DEFAULT_SYNC_TIMEZONE = "Europe/Amsterdam"
-SYNC_SCRIPT = Path(__file__).with_name("sync_rss.py")
+SYNC_MODULE = "podcast_mcp.ingest.rss"
 
 
 def log(message: str) -> None:
@@ -28,7 +27,7 @@ def next_run_at(cron_expression: str, timezone: ZoneInfo) -> datetime:
 def run_sync() -> None:
     log("Starting scheduled RSS sync")
     started_at = time.monotonic()
-    subprocess.run([sys.executable, str(SYNC_SCRIPT)], check=True)
+    subprocess.run([sys.executable, "-m", SYNC_MODULE], check=True)
     log(f"Finished scheduled RSS sync in {time.monotonic() - started_at:.1f}s")
 
 

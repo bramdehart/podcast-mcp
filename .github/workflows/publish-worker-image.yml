@@ -8,8 +8,8 @@ name: Publish RunPod worker image
     paths:
       - Dockerfile.worker
       - requirements-runpod.txt
-      - runpod_worker.py
-      - transcribe.py
+      - src/podcast_mcp/runpod/**
+      - src/podcast_mcp/transcribe/**
       - .github/workflows/publish-worker-image.yml
 
 permissions:
