@@ -39,7 +39,7 @@ class StaticBearerTokenVerifier(TokenVerifier):
     async def verify_token(self, token: str) -> AccessToken | None:
         if not hmac.compare_digest(token, self.token):
             return None
-        return AccessToken(token=token, client_id="podcast-rag", scopes=["mcp"])
+        return AccessToken(token=token, client_id="podcast-mcp", scopes=["mcp"])
 
 
 def int_env(name: str, default: int) -> int:
@@ -104,7 +104,7 @@ def create_mcp_server() -> FastMCP:
         token_verifier = StaticBearerTokenVerifier(bearer_token)
 
     return FastMCP(
-        "podcast-rag",
+        "podcast-mcp",
         auth=auth_settings,
         token_verifier=token_verifier,
         host=os.getenv("MCP_HOST", DEFAULT_MCP_HOST),

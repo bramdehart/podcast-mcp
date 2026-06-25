@@ -17,7 +17,7 @@ permissions:
   packages: write
 
 env:
-  IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/podcast-rag-worker
+  IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/podcast-mcp-worker
 
 jobs:
   publish:

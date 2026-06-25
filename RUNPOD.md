@@ -37,7 +37,7 @@ python sync_rss.py
 The GitHub Actions workflow `.github/workflows/publish-worker-image.yml` automatically builds and pushes:
 
 ```text
-ghcr.io/bramdehart/podcast-rag-worker:latest
+ghcr.io/bramdehart/podcast-mcp-worker:latest
 ```
 
 You can start the workflow manually from GitHub Actions, or automatically by pushing to `main`.
@@ -45,7 +45,7 @@ You can start the workflow manually from GitHub Actions, or automatically by pus
 Then use this in RunPod:
 
 ```env
-Container image=ghcr.io/bramdehart/podcast-rag-worker:latest
+Container image=ghcr.io/bramdehart/podcast-mcp-worker:latest
 Template=No template
 Start command=
 ```
@@ -53,8 +53,8 @@ Start command=
 You can also build and push manually:
 
 ```bash
-docker build -f Dockerfile.worker -t ghcr.io/bramdehart/podcast-rag-worker:latest .
-docker push ghcr.io/bramdehart/podcast-rag-worker:latest
+docker build -f Dockerfile.worker -t ghcr.io/bramdehart/podcast-mcp-worker:latest .
+docker push ghcr.io/bramdehart/podcast-mcp-worker:latest
 ```
 
 After that, create a RunPod Serverless endpoint with this image.

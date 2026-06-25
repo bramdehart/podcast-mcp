@@ -1,4 +1,4 @@
-# Podcast RAG MCP tools
+# Podcast MCP tools
 
 This project exposes the indexed podcast database as MCP tools.
 
@@ -41,10 +41,10 @@ Install dependencies after pulling changes:
 Example Codex MCP config:
 
 ```toml
-[mcp_servers.podcast-rag]
-command = "/absolute/path/to/podcast-rag/.venv/bin/python"
-args = ["/absolute/path/to/podcast-rag/podcast_mcp_server.py"]
-cwd = "/absolute/path/to/podcast-rag"
+[mcp_servers.podcast-mcp]
+command = "/absolute/path/to/podcast-mcp/.venv/bin/python"
+args = ["/absolute/path/to/podcast-mcp/podcast_mcp_server.py"]
+cwd = "/absolute/path/to/podcast-mcp"
 ```
 
 ## Run from CLI
