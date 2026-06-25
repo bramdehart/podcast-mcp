@@ -8,6 +8,8 @@ This project indexes podcast episodes from an RSS feed, transcribes them, identi
 
 This repository powers a concrete production deployment for **AI Report MCP**.
 
+![image](docs/dialog-example.png)
+
 Public MCP endpoint:
 
 ```text
@@ -29,18 +31,10 @@ Example questions:
 
 The demo endpoint is read-only and rate-limited.
 
-## What It Does
+## Synchronization flow
 
-1. Reads a podcast RSS feed.
-2. Finds new episodes that are not indexed yet.
-3. Sends audio to a RunPod GPU worker.
-4. Transcribes audio with Faster Whisper.
-5. Runs pyannote speaker diarization.
-6. Resolves speaker names with OpenAI.
-7. Chunks transcript text.
-8. Creates embeddings.
-9. Stores episodes, speakers, segments, chunks, and vectors in Postgres/pgvector.
-10. Exposes searchable transcript tools over MCP.
+![image](docs/sync-flow.png)
+
 
 ## MCP Tools
 
