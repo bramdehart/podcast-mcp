@@ -9,7 +9,7 @@ from pathlib import Path
 import requests
 
 from podcast_mcp.config import settings
-from podcast_mcp.transcribe.pipeline import (
+from podcast_mcp.ingest.transcription import (
     apply_speaker_mapping,
     format_seconds,
     metadata_paths,

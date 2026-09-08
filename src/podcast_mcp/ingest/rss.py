@@ -15,7 +15,7 @@ from podcast_mcp.ingest.transcript import ingest_transcript_file
 
 
 USER_AGENT = "AppleCoreMedia"
-TRANSCRIBE_MODULE = "podcast_mcp.transcribe.pipeline"
+TRANSCRIBE_MODULE = "podcast_mcp.ingest.transcription"
 RUNPOD_CLIENT_MODULE = "podcast_mcp.infrastructure.runpod.client"
 
 

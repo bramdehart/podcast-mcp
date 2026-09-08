@@ -9,7 +9,7 @@ name: Publish RunPod worker image
       - Dockerfile.worker
       - pyproject.toml
       - src/podcast_mcp/infrastructure/runpod/**
-      - src/podcast_mcp/transcribe/**
+      - src/podcast_mcp/ingest/transcription.py
       - .github/workflows/publish-worker-image.yml
 
 permissions:
