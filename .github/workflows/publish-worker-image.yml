@@ -7,8 +7,8 @@ name: Publish RunPod worker image
       - main
     paths:
       - Dockerfile.worker
-      - requirements-runpod.txt
-      - src/podcast_mcp/runpod/**
+      - pyproject.toml
+      - src/podcast_mcp/infrastructure/runpod/**
       - src/podcast_mcp/transcribe/**
       - .github/workflows/publish-worker-image.yml
 

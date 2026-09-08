@@ -16,7 +16,7 @@ from podcast_mcp.ingest.transcript import ingest_transcript_file
 
 USER_AGENT = "AppleCoreMedia"
 TRANSCRIBE_MODULE = "podcast_mcp.transcribe.pipeline"
-RUNPOD_CLIENT_MODULE = "podcast_mcp.runpod.client"
+RUNPOD_CLIENT_MODULE = "podcast_mcp.infrastructure.runpod.client"
 
 
 def fetch_rss_xml(url: str) -> bytes:

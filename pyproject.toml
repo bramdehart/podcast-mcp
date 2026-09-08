@@ -54,7 +54,7 @@ podcast-mcp-scheduler = "podcast_mcp.ingest.scheduler:main"
 podcast-mcp-tools = "podcast_mcp.server.tools.cli:main"
 podcast-mcp-speaker-names = "podcast_mcp.ingest.speaker_names:main"
 podcast-mcp-transcribe = "podcast_mcp.transcribe.pipeline:main"
-podcast-mcp-runpod = "podcast_mcp.runpod.client:main"
+podcast-mcp-runpod = "podcast_mcp.infrastructure.runpod.client:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

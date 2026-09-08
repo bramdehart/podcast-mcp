@@ -9,7 +9,7 @@ from psycopg.rows import dict_row
 
 from podcast_mcp.config import settings
 from podcast_mcp.ingest.rss import fetch_rss_xml, parse_episode_items
-from podcast_mcp.runpod.client import resolve_speaker_names_locally
+from podcast_mcp.infrastructure.runpod.client import resolve_speaker_names_locally
 
 
 def log(message: str) -> None:
