@@ -57,7 +57,6 @@ jobs:
 
   publish-pypi:
     runs-on: ubuntu-latest
-    if: secrets.PYPI_API_TOKEN != ''
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -68,6 +67,7 @@ jobs:
           pip install build
           python -m build
       - name: Publish to PyPI
+        if: secrets.PYPI_API_TOKEN != ''
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           password: ${{ secrets.PYPI_API_TOKEN }}
