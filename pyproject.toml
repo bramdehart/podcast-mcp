@@ -48,10 +48,10 @@ dev = [
 ]
 
 [project.scripts]
-podcast-mcp = "podcast_mcp.mcp.server:main"
+podcast-mcp = "podcast_mcp.server.server:main"
 podcast-mcp-ingest = "podcast_mcp.ingest.rss:main"
 podcast-mcp-scheduler = "podcast_mcp.ingest.scheduler:main"
-podcast-mcp-tools = "podcast_mcp.mcp.tools:main"
+podcast-mcp-tools = "podcast_mcp.server.tools.cli:main"
 podcast-mcp-speaker-names = "podcast_mcp.ingest.speaker_names:main"
 podcast-mcp-transcribe = "podcast_mcp.transcribe.pipeline:main"
 podcast-mcp-runpod = "podcast_mcp.runpod.client:main"
