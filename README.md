@@ -9,8 +9,6 @@ Protocol](https://modelcontextprotocol.io/). Any podcast RSS feed can be
 indexed; the code stays generic, while the [AI Report](https://www.aireport.nl/)
 deployment is one concrete example.
 
-![sync flow](docs/sync-flow.png)
-
 ## How it works
 
 Podcast MCP runs two separate processes. Ingestion is offline and heavy and may
