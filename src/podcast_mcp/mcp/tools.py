@@ -1,123 +1,37 @@
 #!/usr/bin/env python3
 import argparse
 import json
-import os
-from datetime import date, datetime
-from decimal import Decimal
 from typing import Any
-from uuid import UUID
 
-import psycopg
-
-from podcast_mcp.config import settings
-from podcast_mcp.ingest.transcript import (
-    embed_texts,
-    vector_literal,
-)
+from podcast_mcp.application.episodes import EpisodeService
+from podcast_mcp.application.search import TranscriptSearch
+from podcast_mcp.application.speakers import SpeakerService
+from podcast_mcp.infrastructure.embeddings import OpenAIEmbeddingClient
+from podcast_mcp.infrastructure.postgres import PostgresTranscriptRepository
 
 
 DEFAULT_SEARCH_LIMIT = 5
 DEFAULT_AROUND_CONTEXT_SECONDS = 60
 
 
-def database_url() -> str:
-    return settings.require_database_url()
+def _episode_service() -> EpisodeService:
+    return EpisodeService(PostgresTranscriptRepository())
 
 
-def embedding_config() -> tuple[str, int]:
-    return (settings.embedding_model, settings.embedding_dimensions)
+def _search_service() -> TranscriptSearch:
+    return TranscriptSearch(PostgresTranscriptRepository(), OpenAIEmbeddingClient())
 
 
-def query_embedding(query: str) -> str:
-    model, dimensions = embedding_config()
-    embedding = embed_texts([query], model, dimensions, batch_size=1)[0]
-    return vector_literal(embedding)
-
-
-def json_value(value: Any) -> Any:
-    if isinstance(value, UUID):
-        return str(value)
-    if isinstance(value, datetime):
-        return value.isoformat()
-    if isinstance(value, date):
-        return value.isoformat()
-    if isinstance(value, Decimal):
-        return float(value)
-    return value
-
-
-def row_dict(row: dict[str, Any]) -> dict[str, Any]:
-    return {key: json_value(value) for key, value in row.items()}
+def _speaker_service() -> SpeakerService:
+    return SpeakerService(PostgresTranscriptRepository(), OpenAIEmbeddingClient())
 
 
 def list_episodes(limit: int = 25, offset: int = 0) -> list[dict[str, Any]]:
-    with psycopg.connect(database_url(), row_factory=psycopg.rows.dict_row) as connection:
-        with connection.cursor() as cursor:
-            cursor.execute(
-                """
-                SELECT
-                    e.id,
-                    e.titel AS title,
-                    e.datum AS published_at,
-                    e.audio_url,
-                    e.duur AS duration,
-                    COUNT(DISTINCT ts.id) AS segment_count,
-                    COUNT(DISTINCT tc.start_seconds) AS chunk_count
-                FROM episodes e
-                LEFT JOIN transcript_segments ts ON ts.episode_id = e.id
-                LEFT JOIN transcript_chunks tc ON tc.episode_id = e.id
-                GROUP BY e.id
-                ORDER BY e.datum DESC NULLS LAST, e.titel
-                LIMIT %s OFFSET %s
-                """,
-                (limit, offset),
-            )
-            return [row_dict(row) for row in cursor.fetchall()]
+    return [episode.to_dict() for episode in _episode_service().list_episodes(limit, offset)]
 
 
 def get_episode(episode_id: str | None = None, audio_url: str | None = None) -> dict[str, Any]:
-    if not episode_id and not audio_url:
-        raise ValueError("Provide episode_id or audio_url")
-
-    where_clause = "e.id = %s" if episode_id else "e.audio_url = %s"
-    value = episode_id or audio_url
-
-    with psycopg.connect(database_url(), row_factory=psycopg.rows.dict_row) as connection:
-        with connection.cursor() as cursor:
-            cursor.execute(
-                f"""
-                SELECT
-                    e.id,
-                    e.titel AS title,
-                    e.datum AS published_at,
-                    e.audio_url,
-                    e.duur AS duration,
-                    COUNT(DISTINCT ts.id) AS segment_count,
-                    COUNT(DISTINCT tc.start_seconds) AS chunk_count
-                FROM episodes e
-                LEFT JOIN transcript_segments ts ON ts.episode_id = e.id
-                LEFT JOIN transcript_chunks tc ON tc.episode_id = e.id
-                WHERE {where_clause}
-                GROUP BY e.id
-                """,
-                (value,),
-            )
-            episode = cursor.fetchone()
-            if episode is None:
-                raise LookupError("Episode not found")
-
-            cursor.execute(
-                """
-                SELECT speaker_id, speaker_name, speaker_confidence, evidence
-                FROM episode_speakers
-                WHERE episode_id = %s
-                ORDER BY speaker_id
-                """,
-                (episode["id"],),
-            )
-            speakers = [row_dict(row) for row in cursor.fetchall()]
-
-    return {**row_dict(episode), "speakers": speakers}
+    return _episode_service().get_episode(episode_id, audio_url).to_dict()
 
 
 def search_podcast_transcripts(
@@ -125,40 +39,8 @@ def search_podcast_transcripts(
     limit: int = DEFAULT_SEARCH_LIMIT,
     episode_id: str | None = None,
 ) -> list[dict[str, Any]]:
-    embedding = query_embedding(query)
-    filters = []
-    values: list[Any] = []
-    if episode_id:
-        filters.append("tc.episode_id = %s")
-        values.append(episode_id)
-
-    where_sql = f"WHERE {' AND '.join(filters)}" if filters else ""
-
-    with psycopg.connect(database_url(), row_factory=psycopg.rows.dict_row) as connection:
-        with connection.cursor() as cursor:
-            cursor.execute(
-                f"""
-                SELECT
-                    tc.episode_id,
-                    e.titel AS episode_title,
-                    e.datum AS published_at,
-                    e.audio_url,
-                    tc.start_seconds,
-                    tc.end_seconds,
-                    tc.speaker_id,
-                    tc.speaker_name,
-                    tc.speaker_confidence,
-                    tc.text,
-                    1 - (tc.embedding <=> %s::vector) AS similarity
-                FROM transcript_chunks tc
-                JOIN episodes e ON e.id = tc.episode_id
-                {where_sql}
-                ORDER BY tc.embedding <=> %s::vector
-                LIMIT %s
-                """,
-                [embedding, *values, embedding, limit],
-            )
-            return [row_dict(row) for row in cursor.fetchall()]
+    chunks = _search_service().search(query, limit, episode_id)
+    return [chunk.to_dict() for chunk in chunks]
 
 
 def get_transcript_around_timestamp(
@@ -166,50 +48,7 @@ def get_transcript_around_timestamp(
     timestamp_seconds: float,
     context_seconds: int = DEFAULT_AROUND_CONTEXT_SECONDS,
 ) -> dict[str, Any]:
-    start = max(0, timestamp_seconds - context_seconds)
-    end = timestamp_seconds + context_seconds
-
-    with psycopg.connect(database_url(), row_factory=psycopg.rows.dict_row) as connection:
-        with connection.cursor() as cursor:
-            cursor.execute(
-                """
-                SELECT id, titel AS title, datum AS published_at, audio_url, duur AS duration
-                FROM episodes
-                WHERE id = %s
-                """,
-                (episode_id,),
-            )
-            episode = cursor.fetchone()
-            if episode is None:
-                raise LookupError("Episode not found")
-
-            cursor.execute(
-                """
-                SELECT
-                    start_seconds,
-                    end_seconds,
-                    speaker_id,
-                    speaker_name,
-                    speaker_confidence,
-                    diarization_confidence,
-                    text
-                FROM transcript_segments
-                WHERE episode_id = %s
-                  AND end_seconds >= %s
-                  AND start_seconds <= %s
-                ORDER BY start_seconds
-                """,
-                (episode_id, start, end),
-            )
-            segments = [row_dict(row) for row in cursor.fetchall()]
-
-    return {
-        "episode": row_dict(episode),
-        "timestamp_seconds": timestamp_seconds,
-        "context_start_seconds": start,
-        "context_end_seconds": end,
-        "segments": segments,
-    }
+    return _search_service().around_timestamp(episode_id, timestamp_seconds, context_seconds).to_dict()
 
 
 def search_by_speaker(
@@ -219,73 +58,8 @@ def search_by_speaker(
     episode_id: str | None = None,
     limit: int = DEFAULT_SEARCH_LIMIT,
 ) -> list[dict[str, Any]]:
-    if not speaker_name and not speaker_id:
-        raise ValueError("Provide speaker_name or speaker_id")
-
-    filters = []
-    values: list[Any] = []
-    if speaker_id:
-        filters.append("tc.speaker_id = %s")
-        values.append(speaker_id)
-    if speaker_name:
-        filters.append("tc.speaker_name ILIKE %s")
-        values.append(f"%{speaker_name}%")
-    if episode_id:
-        filters.append("tc.episode_id = %s")
-        values.append(episode_id)
-
-    where_sql = "WHERE " + " AND ".join(filters)
-
-    with psycopg.connect(database_url(), row_factory=psycopg.rows.dict_row) as connection:
-        with connection.cursor() as cursor:
-            if query:
-                embedding = query_embedding(query)
-                cursor.execute(
-                    f"""
-                    SELECT
-                        tc.episode_id,
-                        e.titel AS episode_title,
-                        e.datum AS published_at,
-                        e.audio_url,
-                        tc.start_seconds,
-                        tc.end_seconds,
-                        tc.speaker_id,
-                        tc.speaker_name,
-                        tc.speaker_confidence,
-                        tc.text,
-                        1 - (tc.embedding <=> %s::vector) AS similarity
-                    FROM transcript_chunks tc
-                    JOIN episodes e ON e.id = tc.episode_id
-                    {where_sql}
-                    ORDER BY tc.embedding <=> %s::vector
-                    LIMIT %s
-                    """,
-                    [embedding, *values, embedding, limit],
-                )
-            else:
-                cursor.execute(
-                    f"""
-                    SELECT
-                        tc.episode_id,
-                        e.titel AS episode_title,
-                        e.datum AS published_at,
-                        e.audio_url,
-                        tc.start_seconds,
-                        tc.end_seconds,
-                        tc.speaker_id,
-                        tc.speaker_name,
-                        tc.speaker_confidence,
-                        tc.text
-                    FROM transcript_chunks tc
-                    JOIN episodes e ON e.id = tc.episode_id
-                    {where_sql}
-                    ORDER BY e.datum DESC NULLS LAST, tc.start_seconds
-                    LIMIT %s
-                    """,
-                    [*values, limit],
-                )
-
-            return [row_dict(row) for row in cursor.fetchall()]
+    chunks = _speaker_service().search(speaker_name, speaker_id, query, episode_id, limit)
+    return [chunk.to_dict() for chunk in chunks]
 
 
 def print_json(value: Any) -> None:

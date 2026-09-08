@@ -8,9 +8,9 @@ from pathlib import Path
 from typing import Any
 
 import psycopg
-import requests
 
 from podcast_mcp.config import settings
+from podcast_mcp.infrastructure.embeddings import embed_texts, vector_literal
 
 
 @dataclass
@@ -122,41 +122,6 @@ def chunk_segments(
         chunks.append(build_chunk(current))
 
     return chunks
-
-
-def openai_headers(api_key: str) -> dict[str, str]:
-    return {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json",
-    }
-
-
-def embed_texts(texts: list[str], model: str, dimensions: int, batch_size: int) -> list[list[float]]:
-    api_key = settings.require_openai_api_key()
-
-    embeddings: list[list[float]] = []
-    for start in range(0, len(texts), batch_size):
-        batch = texts[start : start + batch_size]
-        response = requests.post(
-            "https://api.openai.com/v1/embeddings",
-            headers=openai_headers(api_key),
-            json={
-                "model": model,
-                "input": batch,
-                "dimensions": dimensions,
-            },
-            timeout=120,
-        )
-        response.raise_for_status()
-        payload = response.json()
-        embeddings.extend(item["embedding"] for item in sorted(payload["data"], key=lambda item: item["index"]))
-        log(f"Embedded {min(start + len(batch), len(texts))}/{len(texts)} chunks")
-
-    return embeddings
-
-
-def vector_literal(values: list[float]) -> str:
-    return "[" + ",".join(f"{value:.9g}" for value in values) + "]"
 
 
 def speaker_rows(transcript: dict[str, Any], segments: list[dict[str, Any]]) -> list[dict[str, Any]]:
