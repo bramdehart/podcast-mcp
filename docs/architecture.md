@@ -41,15 +41,15 @@ Layering rules:
 
 ## High-level architecture
 
-```text
-RSS feed
-  -> scheduler/app container
-  -> transcription worker (RunPod GPU or local)
-  -> speaker-name resolution
-  -> ingest + OpenAI embeddings
-  -> Postgres + pgvector
-  -> MCP HTTP service
-  -> Claude / Cursor / other MCP clients
+```mermaid
+flowchart LR
+    A[RSS feed] --> B[Scheduler / app container]
+    B --> C[Transcription worker<br/>RunPod GPU or local]
+    C --> D[Speaker-name resolution]
+    D --> E[Ingest + OpenAI embeddings]
+    E --> F[(Postgres + pgvector)]
+    F --> G[MCP HTTP service]
+    G --> H[Claude / Cursor / other MCP clients]
 ```
 
 Current deployment split (AI Report):
@@ -73,15 +73,15 @@ Current deployment split (AI Report):
 
 ### 1. Ingestion (offline, heavy)
 
-```text
-RSS feed
-  -> download audio
-  -> transcribe (Whisper)
-  -> diarize (pyannote)
-  -> resolve speaker names (LLM)
-  -> chunk transcript
-  -> embed chunks (OpenAI)
-  -> store in Postgres/pgvector
+```mermaid
+flowchart TD
+    A[RSS feed] --> B[Download audio]
+    B --> C[Transcribe<br/>Whisper]
+    C --> D[Diarize<br/>pyannote]
+    D --> E[Resolve speaker names<br/>LLM]
+    E --> F[Chunk transcript]
+    F --> G[Embed chunks<br/>OpenAI]
+    G --> H[(Postgres + pgvector)]
 ```
 
 This workload may use GPUs and pull in `faster-whisper`, `pyannote.audio`,
@@ -89,12 +89,12 @@ This workload may use GPUs and pull in `faster-whisper`, `pyannote.audio`,
 
 ### 2. Serving (online, light)
 
-```text
-MCP client
-  -> MCP server (tools)
-  -> application service
-  -> repository interface
-  -> Postgres/pgvector
+```mermaid
+flowchart TD
+    A[MCP client] --> B[MCP server<br/>tools]
+    B --> C[Application service]
+    C --> D[Repository interface]
+    D --> E[(Postgres + pgvector)]
 ```
 
 This workload is small, fast, and has no GPU dependencies. It is installed via

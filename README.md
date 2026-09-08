@@ -16,58 +16,25 @@ use GPUs; the MCP server is online, lightweight, and read-only.
 
 ### Process 1: Ingesting new episodes
 
-```text
-                 RSS feed
-                    │  (polled on a schedule)
-                    ▼
-            ┌─────────────────────┐
-            │  RSS sync           │   finds episodes not yet indexed
-            └──────────┬──────────┘
-                       │ audio URL
-                       ▼
-            ┌─────────────────────┐
-            │  Transcription      │   Faster Whisper (RunPod GPU worker or local)
-            └──────────┬──────────┘
-                       ▼
-            ┌─────────────────────┐
-            │  Speaker diarization│   pyannote -> anonymous SPEAKER_00 labels
-            └──────────┬──────────┘
-                       ▼
-            ┌─────────────────────┐
-            │  Speaker name map   │   LLM resolves labels to names + confidence
-            └──────────┬──────────┘
-                       ▼
-            ┌─────────────────────┐
-            │  Chunk + embed      │   transcript chunks -> OpenAI embeddings
-            └──────────┬──────────┘
-                       ▼
-            ┌─────────────────────┐
-            │  Postgres + pgvector│   episodes, speakers, segments, chunks
-            └─────────────────────┘
+```mermaid
+flowchart TD
+    A[RSS feed] -->|polled on a schedule| B[RSS sync]
+    B -->|audio URL| C[Transcription<br/>Faster Whisper on RunPod GPU worker or local]
+    C -->|transcript segments| D[Speaker diarization<br/>pyannote]
+    D -->|anonymous SPEAKER_00 labels| E[Speaker name map<br/>LLM resolves labels to names + confidence]
+    E -->|named transcript| F[Chunk + embed<br/>transcript chunks to OpenAI embeddings]
+    F -->|episodes, speakers, segments, chunks| G[(Postgres + pgvector)]
 ```
 
 ### Process 2: Calling the MCP server
 
-```text
-   Claude / Cursor / ChatGPT / any MCP client
-                    │  MCP tool call (stdio or authenticated HTTP)
-                    ▼
-            ┌─────────────────────┐
-            │  MCP server         │   thin tool handlers (server/tools)
-            └──────────┬──────────┘
-                       ▼
-            ┌─────────────────────┐
-            │  Application        │   use cases: search, episodes, speakers
-            │  services           │
-            └──────────┬──────────┘
-                       ▼
-            ┌─────────────────────┐
-            │  Repository         │   read-only interface over transcript data
-            │  (Postgres)         │
-            └─────────────────────┘
-                       │
-                       ▼
-            search / transcript results returned to the client
+```mermaid
+flowchart TD
+    A[Claude / Cursor / ChatGPT / any MCP client]
+    A -->|MCP tool call<br/>stdio or authenticated HTTP| B[MCP server<br/>thin tool handlers]
+    B -->|use cases: search, episodes, speakers| C[Application services]
+    C -->|read-only interface| D[Repository<br/>Postgres + pgvector]
+    D -->|search / transcript results| A
 ```
 
 ## Try the hosted demo
