@@ -15,7 +15,7 @@ import wave
 from pathlib import Path
 from urllib.parse import urlparse
 
-from dotenv import load_dotenv
+from podcast_mcp.config import settings
 
 
 os.environ.setdefault("MPLCONFIGDIR", "/tmp/matplotlib")
@@ -27,22 +27,9 @@ warnings.filterwarnings(
 
 TMP_DIR = Path("/tmp")
 USER_AGENT = "AppleCoreMedia"
-DEFAULT_MODEL_SIZE = "medium"
-DEFAULT_COMPUTE_TYPE = "int8"
-DEFAULT_DEVICE = "auto"
-DEFAULT_BEAM_SIZE = 5
 CONDITION_ON_PREVIOUS_TEXT = False
 VAD_FILTER = True
 NO_SPEECH_THRESHOLD = 0.5
-DEFAULT_CHUNK_SECONDS = 1800
-DEFAULT_HOTWORDS = ""
-DEFAULT_DIARIZATION_ENABLED = False
-DEFAULT_DIARIZATION_MODEL = "pyannote/speaker-diarization-3.1"
-DEFAULT_DIARIZATION_DEVICE = "auto"
-DEFAULT_DIARIZATION_MIN_SPEAKERS = 2
-DEFAULT_DIARIZATION_MAX_SPEAKERS = 4
-DEFAULT_SPEAKER_NAME_RESOLUTION_ENABLED = False
-DEFAULT_SPEAKER_NAME_MODEL = "gpt-5.4-mini"
 PROGRESS_HEARTBEAT_SECONDS = 60
 PROGRESS_LOG_INTERVAL_SECONDS = 300
 MAX_EPISODE_DESCRIPTION_PROMPT_CHARS = 4000
@@ -60,27 +47,6 @@ def format_seconds(seconds: float) -> str:
     if minutes:
         return f"{minutes}m {remaining_seconds}s"
     return f"{remaining_seconds}s"
-
-
-def int_env(name: str, default: int) -> int:
-    value = os.getenv(name)
-    if value is None or value == "":
-        return default
-    return int(value)
-
-
-def optional_int_env(name: str, default: int | None = None) -> int | None:
-    value = os.getenv(name)
-    if value is None or value == "":
-        return default
-    return int(value)
-
-
-def bool_env(name: str, default: bool) -> bool:
-    value = os.getenv(name)
-    if value is None or value == "":
-        return default
-    return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
 def cleanup_gpu_memory(label: str) -> None:
@@ -478,7 +444,7 @@ def run_diarization(
 
     torch.serialization.add_safe_globals([torch.torch_version.TorchVersion, Specifications, Problem, Resolution])
 
-    hf_token = os.getenv("HUGGINGFACE_TOKEN") or os.getenv("HF_TOKEN")
+    hf_token = settings.huggingface_token
     if not hf_token:
         raise RuntimeError("HUGGINGFACE_TOKEN or HF_TOKEN is required when DIARIZATION_ENABLED=true")
 
@@ -627,9 +593,7 @@ def resolve_speaker_names(
 ) -> dict[str, dict[str, object]]:
     import requests
 
-    api_key = os.getenv("OPENAI_API_KEY")
-    if not api_key:
-        raise RuntimeError("OPENAI_API_KEY is required when SPEAKER_NAME_RESOLUTION_ENABLED=true")
+    api_key = settings.require_openai_api_key()
 
     speaker_ids = sorted({str(segment["speaker_id"]) for segment in segments if segment.get("speaker_id")})
     if not speaker_ids:
@@ -832,23 +796,20 @@ def process_audio_url(
     podcast_description: str | None = None,
 ) -> tuple[dict[str, object], Path]:
     total_started_at = time.monotonic()
-    model_size = os.getenv("TRANSCRIBE_MODEL", DEFAULT_MODEL_SIZE)
-    compute_type = os.getenv("TRANSCRIBE_COMPUTE_TYPE", DEFAULT_COMPUTE_TYPE)
-    device = os.getenv("TRANSCRIBE_DEVICE", DEFAULT_DEVICE)
-    beam_size = int_env("TRANSCRIBE_BEAM_SIZE", DEFAULT_BEAM_SIZE)
-    chunk_seconds = int_env("TRANSCRIBE_CHUNK_SECONDS", DEFAULT_CHUNK_SECONDS)
-    hotwords = os.getenv("TRANSCRIBE_HOTWORDS", DEFAULT_HOTWORDS) or None
-    language = os.getenv("TRANSCRIBE_LANGUAGE") or None
-    diarization_enabled = bool_env("DIARIZATION_ENABLED", DEFAULT_DIARIZATION_ENABLED)
-    diarization_model = os.getenv("DIARIZATION_MODEL", DEFAULT_DIARIZATION_MODEL)
-    diarization_device = os.getenv("DIARIZATION_DEVICE", device if device != "auto" else DEFAULT_DIARIZATION_DEVICE)
-    diarization_min_speakers = optional_int_env("DIARIZATION_MIN_SPEAKERS", DEFAULT_DIARIZATION_MIN_SPEAKERS)
-    diarization_max_speakers = optional_int_env("DIARIZATION_MAX_SPEAKERS", DEFAULT_DIARIZATION_MAX_SPEAKERS)
-    speaker_name_resolution_enabled = bool_env(
-        "SPEAKER_NAME_RESOLUTION_ENABLED",
-        DEFAULT_SPEAKER_NAME_RESOLUTION_ENABLED,
-    )
-    speaker_name_model = os.getenv("SPEAKER_NAME_MODEL", DEFAULT_SPEAKER_NAME_MODEL)
+    model_size = settings.transcribe_model
+    compute_type = settings.transcribe_compute_type
+    device = settings.transcribe_device
+    beam_size = settings.transcribe_beam_size
+    chunk_seconds = settings.transcribe_chunk_seconds
+    hotwords = settings.transcribe_hotwords
+    language = settings.transcribe_language
+    diarization_enabled = settings.diarization_enabled
+    diarization_model = settings.diarization_model
+    diarization_device = settings.diarization_device
+    diarization_min_speakers = settings.diarization_min_speakers
+    diarization_max_speakers = settings.diarization_max_speakers
+    speaker_name_resolution_enabled = settings.speaker_name_resolution_enabled
+    speaker_name_model = settings.speaker_name_model
     audio_path, transcript_path = tmp_paths(audio_url)
     wav_path = wav_path_for_audio(audio_url)
     diarization_path, speaker_mapping_path = metadata_paths(audio_url)
@@ -1070,8 +1031,6 @@ def process_audio_url(
 
 
 def main() -> int:
-    load_dotenv()
-
     parser = argparse.ArgumentParser(description="Transcribe podcast audio to /tmp JSON.")
     parser.add_argument("audio_url", help="Podcast audio URL to download and transcribe.")
     parser.add_argument("--podcast-description", help="Podcast channel description used as speaker-name context.")

@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-import os
 import subprocess
 import sys
 import time
@@ -7,11 +6,10 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 from croniter import croniter
-from dotenv import load_dotenv
+
+from podcast_mcp.config import settings
 
 
-DEFAULT_SYNC_CRON = "0 6 * * 5"
-DEFAULT_SYNC_TIMEZONE = "Europe/Amsterdam"
 SYNC_MODULE = "podcast_mcp.ingest.rss"
 
 
@@ -32,10 +30,8 @@ def run_sync() -> None:
 
 
 def main() -> int:
-    load_dotenv()
-
-    cron_expression = os.getenv("SYNC_CRON", DEFAULT_SYNC_CRON)
-    timezone_name = os.getenv("SYNC_TIMEZONE", DEFAULT_SYNC_TIMEZONE)
+    cron_expression = settings.sync_cron
+    timezone_name = settings.sync_timezone
     timezone = ZoneInfo(timezone_name)
 
     log(f"RSS sync scheduler started cron='{cron_expression}' timezone='{timezone_name}'")

@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-import os
 import re
 import subprocess
 import sys
@@ -10,14 +9,11 @@ from html import unescape
 from pathlib import Path
 
 import psycopg
-from dotenv import load_dotenv
 
+from podcast_mcp.config import settings
 from podcast_mcp.ingest.transcript import ingest_transcript_file
 
 
-DEFAULT_RSS_URL = ""
-DEFAULT_SYNC_MAX_EPISODES = 10
-DEFAULT_SYNC_MAX_RUNTIME_SECONDS = 19800
 USER_AGENT = "AppleCoreMedia"
 TRANSCRIBE_MODULE = "podcast_mcp.transcribe.pipeline"
 RUNPOD_CLIENT_MODULE = "podcast_mcp.runpod.client"
@@ -50,13 +46,6 @@ def clean_description(value: str | None) -> str | None:
     text = re.sub(r"<[^>]+>", " ", unescape(value))
     text = re.sub(r"\s+", " ", text).strip()
     return text or None
-
-
-def int_env(name: str, default: int) -> int:
-    value = os.getenv(name)
-    if value is None or value == "":
-        return default
-    return int(value)
 
 
 def parse_duration(value: str | None) -> int | None:
@@ -141,7 +130,7 @@ def transcribe_episode(
     episode_description: str | None = None,
     podcast_description: str | None = None,
 ) -> Path:
-    execution_mode = os.getenv("TRANSCRIBE_EXECUTION", "local").strip().lower()
+    execution_mode = settings.transcribe_execution
     if execution_mode == "runpod":
         command = [sys.executable, "-m", RUNPOD_CLIENT_MODULE, audio_url]
         if podcast_description:
@@ -168,17 +157,13 @@ def transcribe_episode(
 
 
 def main() -> int:
-    load_dotenv()
     started_at = time.monotonic()
 
-    database_url = os.getenv("DATABASE_URL")
-    if not database_url:
-        print("DATABASE_URL missing. Add it to .env or export it.", file=sys.stderr)
-        return 1
+    database_url = settings.require_database_url()
 
-    rss_url = os.getenv("RSS_URL", DEFAULT_RSS_URL)
-    max_episodes = int_env("SYNC_MAX_EPISODES", DEFAULT_SYNC_MAX_EPISODES)
-    max_runtime_seconds = int_env("SYNC_MAX_RUNTIME_SECONDS", DEFAULT_SYNC_MAX_RUNTIME_SECONDS)
+    rss_url = settings.rss_url
+    max_episodes = settings.sync_max_episodes
+    max_runtime_seconds = settings.sync_max_runtime_seconds
     xml_data = fetch_rss_xml(rss_url)
     rss_episodes = parse_episode_items(xml_data)
     indexed_audio_urls = get_indexed_audio_urls(database_url)

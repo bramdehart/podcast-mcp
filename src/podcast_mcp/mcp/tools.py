@@ -8,11 +8,9 @@ from typing import Any
 from uuid import UUID
 
 import psycopg
-from dotenv import load_dotenv
 
+from podcast_mcp.config import settings
 from podcast_mcp.ingest.transcript import (
-    DEFAULT_EMBEDDING_DIMENSIONS,
-    DEFAULT_EMBEDDING_MODEL,
     embed_texts,
     vector_literal,
 )
@@ -23,17 +21,11 @@ DEFAULT_AROUND_CONTEXT_SECONDS = 60
 
 
 def database_url() -> str:
-    value = os.getenv("DATABASE_URL")
-    if not value:
-        raise RuntimeError("DATABASE_URL missing. Add it to .env or export it.")
-    return value
+    return settings.require_database_url()
 
 
 def embedding_config() -> tuple[str, int]:
-    return (
-        os.getenv("EMBEDDING_MODEL", DEFAULT_EMBEDDING_MODEL),
-        DEFAULT_EMBEDDING_DIMENSIONS,
-    )
+    return (settings.embedding_model, settings.embedding_dimensions)
 
 
 def query_embedding(query: str) -> str:
@@ -301,8 +293,6 @@ def print_json(value: Any) -> None:
 
 
 def main() -> int:
-    load_dotenv()
-
     parser = argparse.ArgumentParser(description="Query podcast transcript tools from the command line.")
     subparsers = parser.add_subparsers(dest="command", required=True)
 

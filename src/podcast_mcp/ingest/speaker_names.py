@@ -1,17 +1,15 @@
 #!/usr/bin/env python3
 import argparse
-import os
 import sys
 import time
 from typing import Any
 
 import psycopg
-from dotenv import load_dotenv
 from psycopg.rows import dict_row
 
-from podcast_mcp.ingest.rss import DEFAULT_RSS_URL, fetch_rss_xml, parse_episode_items
+from podcast_mcp.config import settings
+from podcast_mcp.ingest.rss import fetch_rss_xml, parse_episode_items
 from podcast_mcp.runpod.client import resolve_speaker_names_locally
-from podcast_mcp.transcribe.pipeline import DEFAULT_SPEAKER_NAME_MODEL
 
 
 def log(message: str) -> None:
@@ -19,7 +17,7 @@ def log(message: str) -> None:
 
 
 def episode_metadata_by_audio_url() -> dict[str, dict[str, Any]]:
-    rss_url = os.getenv("RSS_URL", DEFAULT_RSS_URL)
+    rss_url = settings.rss_url
     try:
         return {str(episode["audio_url"]): episode for episode in parse_episode_items(fetch_rss_xml(rss_url))}
     except Exception as error:
@@ -195,8 +193,6 @@ def resolve_episode(
 
 
 def main() -> int:
-    load_dotenv()
-
     parser = argparse.ArgumentParser(description="Resolve missing speaker names for already-ingested episodes.")
     parser.add_argument("--episode-id", help="Only resolve one episode id.")
     parser.add_argument("--limit", type=int, help="Maximum number of episodes to process.")
@@ -204,19 +200,14 @@ def main() -> int:
     parser.add_argument("--dry-run", action="store_true", help="Resolve names without writing database updates.")
     args = parser.parse_args()
 
-    if os.getenv("SPEAKER_NAME_RESOLUTION_ENABLED", "").strip().lower() not in {"1", "true", "yes", "on"}:
+    if not settings.speaker_name_resolution_enabled:
         log("SPEAKER_NAME_RESOLUTION_ENABLED must be true")
         return 1
-    if not os.getenv("OPENAI_API_KEY"):
-        log("OPENAI_API_KEY missing")
-        return 1
+    settings.require_openai_api_key()
 
-    database_url = os.getenv("DATABASE_URL")
-    if not database_url:
-        log("DATABASE_URL missing")
-        return 1
+    database_url = settings.require_database_url()
 
-    model = os.getenv("SPEAKER_NAME_MODEL", DEFAULT_SPEAKER_NAME_MODEL)
+    model = settings.speaker_name_model
     started_at = time.monotonic()
     log(f"Resolving speaker names with {model}")
 

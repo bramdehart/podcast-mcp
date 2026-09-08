@@ -1,18 +1,17 @@
 #!/usr/bin/env python3
 import anyio
 import hmac
-import os
 import time
 from collections import defaultdict, deque
 from typing import Any
 
-from dotenv import load_dotenv
 from mcp.server.auth.provider import AccessToken, TokenVerifier
 from mcp.server.auth.settings import AuthSettings
 from mcp.server.fastmcp import FastMCP
 from starlette.responses import PlainTextResponse
 from starlette.types import ASGIApp, Receive, Scope, Send
 
+from podcast_mcp.config import settings
 from podcast_mcp.mcp.tools import (
     get_episode as get_episode_data,
     get_transcript_around_timestamp as get_transcript_around_timestamp_data,
@@ -20,16 +19,6 @@ from podcast_mcp.mcp.tools import (
     search_by_speaker as search_by_speaker_data,
     search_podcast_transcripts as search_podcast_transcripts_data,
 )
-
-
-load_dotenv()
-
-
-DEFAULT_MCP_HOST = "127.0.0.1"
-DEFAULT_MCP_PORT = 8000
-DEFAULT_MCP_PUBLIC_URL = "http://localhost:8000"
-DEFAULT_MCP_RATE_LIMIT_REQUESTS = 60
-DEFAULT_MCP_RATE_LIMIT_WINDOW_SECONDS = 60
 
 
 class StaticBearerTokenVerifier(TokenVerifier):
@@ -40,13 +29,6 @@ class StaticBearerTokenVerifier(TokenVerifier):
         if not hmac.compare_digest(token, self.token):
             return None
         return AccessToken(token=token, client_id="podcast-mcp", scopes=["mcp"])
-
-
-def int_env(name: str, default: int) -> int:
-    value = os.getenv(name)
-    if value is None or value == "":
-        return default
-    return int(value)
 
 
 def client_ip_from_scope(scope: Scope) -> str:
@@ -94,8 +76,8 @@ class IPRateLimitMiddleware:
 
 
 def create_mcp_server() -> FastMCP:
-    bearer_token = os.getenv("MCP_BEARER_TOKEN")
-    public_url = os.getenv("MCP_PUBLIC_URL", DEFAULT_MCP_PUBLIC_URL)
+    bearer_token = settings.mcp_bearer_token
+    public_url = settings.mcp_public_url
     auth_settings = None
     token_verifier = None
 
@@ -107,16 +89,16 @@ def create_mcp_server() -> FastMCP:
         "podcast-mcp",
         auth=auth_settings,
         token_verifier=token_verifier,
-        host=os.getenv("MCP_HOST", DEFAULT_MCP_HOST),
-        port=int_env("MCP_PORT", DEFAULT_MCP_PORT),
+        host=settings.mcp_host,
+        port=settings.mcp_port,
     )
 
 
 def rate_limited_app(app: ASGIApp) -> ASGIApp:
     return IPRateLimitMiddleware(
         app,
-        requests=int_env("MCP_RATE_LIMIT_REQUESTS", DEFAULT_MCP_RATE_LIMIT_REQUESTS),
-        window_seconds=int_env("MCP_RATE_LIMIT_WINDOW_SECONDS", DEFAULT_MCP_RATE_LIMIT_WINDOW_SECONDS),
+        requests=settings.mcp_rate_limit_requests,
+        window_seconds=settings.mcp_rate_limit_window_seconds,
     )
 
 
@@ -220,8 +202,8 @@ def search_by_speaker(
 
 
 if __name__ == "__main__":
-    transport = os.getenv("MCP_TRANSPORT", "stdio").strip().lower()
-    if transport != "stdio" and not os.getenv("MCP_BEARER_TOKEN"):
+    transport = settings.mcp_transport
+    if transport != "stdio" and not settings.mcp_bearer_token:
         raise SystemExit("MCP_BEARER_TOKEN is required when MCP_TRANSPORT is not stdio")
     if transport not in {"stdio", "sse", "streamable-http"}:
         raise SystemExit("MCP_TRANSPORT must be 'stdio', 'sse', or 'streamable-http'")

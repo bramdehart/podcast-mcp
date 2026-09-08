@@ -7,13 +7,10 @@ import time
 from pathlib import Path
 
 import requests
-from dotenv import load_dotenv
 
+from podcast_mcp.config import settings
 from podcast_mcp.transcribe.pipeline import (
-    DEFAULT_SPEAKER_NAME_MODEL,
-    DEFAULT_SPEAKER_NAME_RESOLUTION_ENABLED,
     apply_speaker_mapping,
-    bool_env,
     format_seconds,
     metadata_paths,
     resolve_speaker_names,
@@ -50,13 +47,6 @@ def log(message: str) -> None:
     print(message, file=sys.stderr, flush=True)
 
 
-def int_env(name: str, default: int) -> int:
-    value = os.getenv(name)
-    if value is None or value == "":
-        return default
-    return int(value)
-
-
 def runpod_headers(api_key: str) -> dict[str, str]:
     return {
         "Authorization": f"Bearer {api_key}",
@@ -81,8 +71,8 @@ def submit_job(api_key: str, endpoint_id: str, audio_url: str) -> str:
             "env": worker_env(),
         },
         "policy": {
-            "executionTimeout": int_env("RUNPOD_EXECUTION_TIMEOUT_MS", DEFAULT_EXECUTION_TIMEOUT_MS),
-            "ttl": int_env("RUNPOD_TTL_MS", DEFAULT_TTL_MS),
+            "executionTimeout": settings.runpod_execution_timeout_ms,
+            "ttl": settings.runpod_ttl_ms,
         },
     }
     response = requests.post(
@@ -100,7 +90,7 @@ def submit_job(api_key: str, endpoint_id: str, audio_url: str) -> str:
 
 
 def poll_job(api_key: str, endpoint_id: str, job_id: str) -> dict[str, object]:
-    poll_interval = int_env("RUNPOD_POLL_INTERVAL_SECONDS", DEFAULT_POLL_INTERVAL_SECONDS)
+    poll_interval = settings.runpod_poll_interval_seconds
     started_at = time.monotonic()
 
     while True:
@@ -148,14 +138,14 @@ def resolve_speaker_names_locally(
 ) -> dict[str, object]:
     if not transcript.get("diarization_enabled"):
         return transcript
-    if not bool_env("SPEAKER_NAME_RESOLUTION_ENABLED", DEFAULT_SPEAKER_NAME_RESOLUTION_ENABLED):
+    if not settings.speaker_name_resolution_enabled:
         return transcript
 
     segments = transcript.get("segments")
     if not isinstance(segments, list):
         return transcript
 
-    speaker_name_model = os.getenv("SPEAKER_NAME_MODEL", DEFAULT_SPEAKER_NAME_MODEL)
+    speaker_name_model = settings.speaker_name_model
     try:
         speaker_mapping = resolve_speaker_names(
             segments,
@@ -192,8 +182,6 @@ def resolve_speaker_names_locally(
 
 
 def main() -> int:
-    load_dotenv()
-
     parser = argparse.ArgumentParser(description="Submit podcast transcription to a RunPod serverless endpoint.")
     parser.add_argument("audio_url", help="Podcast audio URL to transcribe on RunPod.")
     parser.add_argument("--podcast-description", help="Podcast channel description used as local speaker-name context.")
@@ -201,8 +189,8 @@ def main() -> int:
     parser.add_argument("--job-id", help="Existing RunPod job id to poll/recover instead of submitting a new job.")
     args = parser.parse_args()
 
-    api_key = os.getenv("RUNPOD_API_KEY")
-    endpoint_id = os.getenv("RUNPOD_ENDPOINT_ID")
+    api_key = settings.runpod_api_key
+    endpoint_id = settings.runpod_endpoint_id
     if not api_key:
         print("RUNPOD_API_KEY missing. Add it to .env or export it.", file=sys.stderr)
         return 1

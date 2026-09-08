@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 import argparse
 import json
-import os
 import sys
 from dataclasses import dataclass
 from datetime import datetime
@@ -10,14 +9,8 @@ from typing import Any
 
 import psycopg
 import requests
-from dotenv import load_dotenv
 
-
-DEFAULT_EMBEDDING_MODEL = "text-embedding-3-small"
-DEFAULT_EMBEDDING_DIMENSIONS = 1536
-DEFAULT_EMBEDDING_BATCH_SIZE = 64
-DEFAULT_CHUNK_MAX_CHARS = 2000
-DEFAULT_CHUNK_MAX_SECONDS = 180
+from podcast_mcp.config import settings
 
 
 @dataclass
@@ -139,9 +132,7 @@ def openai_headers(api_key: str) -> dict[str, str]:
 
 
 def embed_texts(texts: list[str], model: str, dimensions: int, batch_size: int) -> list[list[float]]:
-    api_key = os.getenv("OPENAI_API_KEY")
-    if not api_key:
-        raise RuntimeError("OPENAI_API_KEY is required for transcript embedding")
+    api_key = settings.require_openai_api_key()
 
     embeddings: list[list[float]] = []
     for start in range(0, len(texts), batch_size):
@@ -331,15 +322,15 @@ def ingest_transcript_file(transcript_path: Path, episode: dict[str, Any], datab
 
     chunks = chunk_segments(
         segments,
-        DEFAULT_CHUNK_MAX_CHARS,
-        DEFAULT_CHUNK_MAX_SECONDS,
+        settings.chunk_max_chars,
+        settings.chunk_max_seconds,
     )
     if not chunks:
         raise RuntimeError("Transcript did not produce chunks")
 
-    embedding_model = os.getenv("EMBEDDING_MODEL", DEFAULT_EMBEDDING_MODEL)
-    embedding_dimensions = DEFAULT_EMBEDDING_DIMENSIONS
-    embedding_batch_size = DEFAULT_EMBEDDING_BATCH_SIZE
+    embedding_model = settings.embedding_model
+    embedding_dimensions = settings.embedding_dimensions
+    embedding_batch_size = settings.embedding_batch_size
 
     log(
         "Embedding transcript "
@@ -357,8 +348,6 @@ def ingest_transcript_file(transcript_path: Path, episode: dict[str, Any], datab
 
 
 def main() -> int:
-    load_dotenv()
-
     parser = argparse.ArgumentParser(description="Embed transcript JSON and store it in Postgres.")
     parser.add_argument("transcript_path", type=Path)
     parser.add_argument("--title", required=True)
@@ -367,10 +356,7 @@ def main() -> int:
     parser.add_argument("--duration", type=int)
     args = parser.parse_args()
 
-    database_url = os.getenv("DATABASE_URL")
-    if not database_url:
-        print("DATABASE_URL missing. Add it to .env or export it.", file=sys.stderr)
-        return 1
+    database_url = settings.require_database_url()
 
     published_at = datetime.fromisoformat(args.published_at) if args.published_at else None
     ingest_transcript_file(
