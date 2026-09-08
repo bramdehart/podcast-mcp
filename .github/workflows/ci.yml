@@ -1,0 +1,107 @@
+name: CI
+
+"on":
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dev dependencies
+        run: pip install ruff
+      - name: Ruff check
+        run: ruff check src tests
+
+  typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dev dependencies
+        run: pip install mypy
+      - name: Mypy check
+        run: mypy src/podcast_mcp
+
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_DB: podcast_mcp
+          POSTGRES_USER: podcast_mcp
+          POSTGRES_PASSWORD: podcast_mcp
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U podcast_mcp"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install package and dev dependencies
+        run: pip install -e ".[server,ingestion,dev]"
+      - name: Apply migrations
+        env:
+          DATABASE_URL: postgresql://podcast_mcp:podcast_mcp@localhost:5432/podcast_mcp
+        run: |
+          python - <<'EOF'
+          import glob
+          import psycopg
+
+          with psycopg.connect("postgresql://podcast_mcp:podcast_mcp@localhost:5432/podcast_mcp") as conn:
+              with conn.cursor() as cur:
+                  for path in sorted(glob.glob("db/migrations/*.sql")):
+                      cur.execute(open(path, encoding="utf-8").read())
+              conn.commit()
+          EOF
+      - name: Run tests
+        env:
+          DATABASE_URL: postgresql://podcast_mcp:podcast_mcp@localhost:5432/podcast_mcp
+        run: pytest tests
+
+  secret-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Gitleaks secret scan
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  docker-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Build app image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: examples/ai-report/Dockerfile.app
+          push: false
+      - name: Build postgres image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          push: false
