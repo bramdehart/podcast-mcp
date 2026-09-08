@@ -102,18 +102,73 @@ the `server` dependency group.
 
 ## Database model
 
-Core tables:
+```mermaid
+erDiagram
+    EPISODES ||--o{ EPISODE_SPEAKERS : "has"
+    EPISODES ||--o{ TRANSCRIPT_SEGMENTS : "has"
+    EPISODES ||--o{ TRANSCRIPT_CHUNKS : "has"
 
-- `episodes`
-  - one row per indexed podcast episode
-  - unique by `audio_url`
-- `episode_speakers`
-  - speaker labels per episode
-  - includes `speaker_id`, `speaker_name`, `speaker_confidence`, `evidence`
-- `transcript_segments`
-  - raw transcript segments with timestamps and speaker metadata
-- `transcript_chunks`
-  - larger searchable chunks with `vector(1536)` embeddings
+    EPISODES {
+        uuid id PK "gen_random_uuid()"
+        text titel "NOT NULL"
+        timestamptz datum
+        text audio_url "NOT NULL UNIQUE"
+        integer duur
+    }
+
+    EPISODE_SPEAKERS {
+        uuid episode_id PK, FK "ON DELETE CASCADE"
+        text speaker_id PK
+        text speaker_name
+        numeric speaker_confidence "0..1"
+        text evidence
+    }
+
+    TRANSCRIPT_SEGMENTS {
+        uuid id PK "gen_random_uuid()"
+        uuid episode_id FK "ON DELETE CASCADE"
+        text text "NOT NULL"
+        numeric start_seconds "NOT NULL"
+        numeric end_seconds "NOT NULL"
+        text speaker_id
+        text speaker_name
+        numeric speaker_confidence "0..1"
+        numeric diarization_confidence "0..1"
+    }
+
+    TRANSCRIPT_CHUNKS {
+        uuid episode_id FK "ON DELETE CASCADE"
+        text text "NOT NULL"
+        numeric start_seconds "NOT NULL"
+        numeric end_seconds "NOT NULL"
+        vector embedding "1536 dims"
+        text speaker_id
+        text speaker_name
+        numeric speaker_confidence "0..1"
+    }
+```
+
+- `episodes` — one row per indexed podcast episode, unique by `audio_url`.
+- `episode_speakers` — speaker labels per episode (`speaker_id`, `speaker_name`,
+  `speaker_confidence`, `evidence`).
+- `transcript_segments` — raw transcript segments with timestamps and speaker
+  metadata; used for timestamp-based context retrieval.
+- `transcript_chunks` — grouped segments formatted with speaker labels and
+  timestamps, each with a `vector(1536)` embedding; used for semantic search.
+
+Chunks are a derived aggregate of consecutive segments. `speaker_name` /
+`speaker_id` on a chunk are only set when all segments in the chunk share one
+speaker, otherwise they are `NULL`.
+
+Indexes:
+
+- `idx_transcript_chunks_embedding` — pgvector `ivfflat` on
+  `transcript_chunks.embedding` (cosine, 100 lists).
+- `idx_transcript_chunks_episode_id`, `idx_transcript_segments_episode_id`,
+  `idx_episode_speakers_episode_id` — btree on `episode_id`.
+- `idx_transcript_segments_speaker` — btree on `(episode_id, speaker_id)`.
+
+The full DDL lives in `db/migrations/`.
 
 ## MCP tools
 
