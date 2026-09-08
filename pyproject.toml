@@ -1,0 +1,77 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "podcast-mcp"
+version = "0.1.0"
+description = "Speaker-aware MCP server for searchable podcast transcripts."
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "MIT" }
+authors = [{ name = "Bram de Hart" }]
+keywords = ["mcp", "podcast", "transcript", "pgvector", "whisper"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Operating System :: OS Independent",
+    "Topic :: Multimedia :: Sound/Audio :: Speech",
+]
+
+dependencies = [
+    "psycopg[binary]==3.2.13",
+    "python-dotenv==1.0.1",
+    "requests==2.32.5",
+]
+
+[project.optional-dependencies]
+server = [
+    "mcp==1.10.1",
+    "uvicorn==0.49.0",
+]
+ingestion = [
+    "croniter==6.0.0",
+]
+worker = [
+    "huggingface-hub<1.0",
+    "matplotlib",
+    "soundfile",
+    "faster-whisper==1.1.1",
+    "pyannote.audio==3.3.2",
+    "torchcodec",
+    "runpod",
+]
+dev = [
+    "ruff",
+    "pytest",
+    "mypy",
+]
+
+[project.scripts]
+podcast-mcp = "podcast_mcp.mcp.server:main"
+podcast-mcp-ingest = "podcast_mcp.ingest.rss:main"
+podcast-mcp-scheduler = "podcast_mcp.ingest.scheduler:main"
+podcast-mcp-tools = "podcast_mcp.mcp.tools:main"
+podcast-mcp-speaker-names = "podcast_mcp.ingest.speaker_names:main"
+podcast-mcp-transcribe = "podcast_mcp.transcribe.pipeline:main"
+podcast-mcp-runpod = "podcast_mcp.runpod.client:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.mypy]
+python_version = "3.12"
+plugins = []
+ignore_missing_imports = true

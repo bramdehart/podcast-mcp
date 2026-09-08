@@ -201,7 +201,7 @@ def search_by_speaker(
     )
 
 
-if __name__ == "__main__":
+def main() -> None:
     transport = settings.mcp_transport
     if transport != "stdio" and not settings.mcp_bearer_token:
         raise SystemExit("MCP_BEARER_TOKEN is required when MCP_TRANSPORT is not stdio")
@@ -211,3 +211,7 @@ if __name__ == "__main__":
         mcp.run(transport=transport)
     else:
         anyio.run(lambda: run_http_mcp_server(transport))
+
+
+if __name__ == "__main__":
+    main()
