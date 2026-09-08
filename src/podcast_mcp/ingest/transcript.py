@@ -106,7 +106,7 @@ def chunk_segments(
         formatted = format_segment_for_chunk(segment)
         segment_start = float(segment.get("start", 0) or 0)
         segment_end = float(segment.get("end", segment_start) or segment_start)
-        current_start = float(current[0].get("start", segment_start) or segment_start) if current else segment_start
+        current_start = float(current[0].get("start") or 0) if current else segment_start
         would_exceed_chars = bool(current) and current_chars + len(formatted) + 1 > max_chars
         would_exceed_seconds = bool(current) and segment_end - current_start > max_seconds
 
@@ -172,10 +172,9 @@ def store_transcript(
     if not isinstance(segments, list):
         raise RuntimeError("Transcript JSON does not contain a segments array")
 
-    with psycopg.connect(database_url) as connection:
-        with connection.cursor() as cursor:
-            cursor.execute(
-                """
+    with psycopg.connect(database_url) as connection, connection.cursor() as cursor:
+        cursor.execute(
+            """
                 INSERT INTO episodes (titel, datum, audio_url, duur)
                 VALUES (%s, %s, %s, %s)
                 ON CONFLICT (audio_url) DO UPDATE
@@ -184,22 +183,22 @@ def store_transcript(
                     duur = EXCLUDED.duur
                 RETURNING id
                 """,
-                (
-                    episode["title"],
-                    episode.get("published_at"),
-                    transcript["audio_url"],
-                    episode.get("duration") or int(float(transcript.get("duration") or 0)) or None,
-                ),
-            )
-            episode_id = str(cursor.fetchone()[0])
+            (
+                episode["title"],
+                episode.get("published_at"),
+                transcript["audio_url"],
+                episode.get("duration") or int(float(transcript.get("duration") or 0)) or None,
+            ),
+        )
+        episode_id = str(cursor.fetchone()[0])  # type: ignore[index]
 
-            cursor.execute("DELETE FROM transcript_chunks WHERE episode_id = %s", (episode_id,))
-            cursor.execute("DELETE FROM transcript_segments WHERE episode_id = %s", (episode_id,))
-            cursor.execute("DELETE FROM episode_speakers WHERE episode_id = %s", (episode_id,))
+        cursor.execute("DELETE FROM transcript_chunks WHERE episode_id = %s", (episode_id,))
+        cursor.execute("DELETE FROM transcript_segments WHERE episode_id = %s", (episode_id,))
+        cursor.execute("DELETE FROM episode_speakers WHERE episode_id = %s", (episode_id,))
 
-            for speaker in speaker_rows(transcript, segments):
-                cursor.execute(
-                    """
+        for speaker in speaker_rows(transcript, segments):
+            cursor.execute(
+                """
                     INSERT INTO episode_speakers (
                         episode_id,
                         speaker_id,
@@ -213,18 +212,18 @@ def store_transcript(
                         speaker_confidence = EXCLUDED.speaker_confidence,
                         evidence = EXCLUDED.evidence
                     """,
-                    (
-                        episode_id,
-                        speaker["speaker_id"],
-                        speaker.get("speaker_name"),
-                        speaker.get("speaker_confidence"),
-                        speaker.get("evidence"),
-                    ),
-                )
+                (
+                    episode_id,
+                    speaker["speaker_id"],
+                    speaker.get("speaker_name"),
+                    speaker.get("speaker_confidence"),
+                    speaker.get("evidence"),
+                ),
+            )
 
-            for segment in segments:
-                cursor.execute(
-                    """
+        for segment in segments:
+            cursor.execute(
+                """
                     INSERT INTO transcript_segments (
                         episode_id,
                         text,
@@ -237,21 +236,21 @@ def store_transcript(
                     )
                     VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                     """,
-                    (
-                        episode_id,
-                        str(segment.get("text", "")).strip(),
-                        segment.get("start"),
-                        segment.get("end"),
-                        segment.get("speaker_id"),
-                        segment.get("speaker_name"),
-                        segment.get("speaker_confidence"),
-                        segment.get("diarization_confidence"),
-                    ),
-                )
+                (
+                    episode_id,
+                    str(segment.get("text", "")).strip(),
+                    segment.get("start"),
+                    segment.get("end"),
+                    segment.get("speaker_id"),
+                    segment.get("speaker_name"),
+                    segment.get("speaker_confidence"),
+                    segment.get("diarization_confidence"),
+                ),
+            )
 
-            for chunk, embedding in zip(chunks, embeddings, strict=True):
-                cursor.execute(
-                    """
+        for chunk, embedding in zip(chunks, embeddings, strict=True):
+            cursor.execute(
+                """
                     INSERT INTO transcript_chunks (
                         episode_id,
                         text,
@@ -264,17 +263,17 @@ def store_transcript(
                     )
                     VALUES (%s, %s, %s, %s, %s::vector, %s, %s, %s)
                     """,
-                    (
-                        episode_id,
-                        chunk.text,
-                        chunk.start_seconds,
-                        chunk.end_seconds,
-                        vector_literal(embedding),
-                        chunk.speaker_id,
-                        chunk.speaker_name,
-                        chunk.speaker_confidence,
-                    ),
-                )
+                (
+                    episode_id,
+                    chunk.text,
+                    chunk.start_seconds,
+                    chunk.end_seconds,
+                    vector_literal(embedding),
+                    chunk.speaker_id,
+                    chunk.speaker_name,
+                    chunk.speaker_confidence,
+                ),
+            )
 
     return episode_id
 
@@ -299,7 +298,8 @@ def ingest_transcript_file(transcript_path: Path, episode: dict[str, Any], datab
 
     log(
         "Embedding transcript "
-        f"chunks={len(chunks)} model='{embedding_model}' dimensions={embedding_dimensions} batch_size={embedding_batch_size}"
+        f"chunks={len(chunks)} model='{embedding_model}' "
+        f"dimensions={embedding_dimensions} batch_size={embedding_batch_size}"
     )
     embeddings = embed_texts(
         [chunk.text for chunk in chunks],

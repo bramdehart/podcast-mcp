@@ -8,7 +8,6 @@ from podcast_mcp.application.speakers import SpeakerService
 from podcast_mcp.infrastructure.embeddings import OpenAIEmbeddingClient
 from podcast_mcp.infrastructure.postgres import PostgresTranscriptRepository
 
-
 DEFAULT_SEARCH_LIMIT = 5
 
 

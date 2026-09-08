@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd" xmlns:content="http://purl.org/rss/1.0/modules/content/">
+  <channel>
+    <title>Test Podcast</title>
+    <description>Een test podcast over technologie en AI.</description>
+    <item>
+      <title>Aflevering 1: AI introductie</title>
+      <enclosure url="https://example.com/audio/episode-1.mp3" type="audio/mpeg" length="1234"/>
+      <pubDate>Mon, 05 Jan 2026 08:00:00 +0000</pubDate>
+      <itunes:duration>45:30</itunes:duration>
+      <content:encoded><![CDATA[<p>In deze aflevering praten we over kunstmatige intelligentie.</p>]]></content:encoded>
+    </item>
+    <item>
+      <title>Aflevering 2: Podcast zonder beschrijving</title>
+      <enclosure url="https://example.com/audio/episode-2.mp3" type="audio/mpeg" length="5678"/>
+      <pubDate>Mon, 12 Jan 2026 08:00:00 +0000</pubDate>
+      <itunes:duration>1:02:15</itunes:duration>
+      <description>Een korte beschrijving zonder HTML.</description>
+    </item>
+    <item>
+      <title>Aflevering zonder audio</title>
+      <pubDate>Mon, 19 Jan 2026 08:00:00 +0000</pubDate>
+    </item>
+  </channel>
+</rss>

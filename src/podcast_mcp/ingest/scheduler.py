@@ -9,7 +9,6 @@ from croniter import croniter
 
 from podcast_mcp.config import settings
 
-
 SYNC_MODULE = "podcast_mcp.ingest.rss"
 
 

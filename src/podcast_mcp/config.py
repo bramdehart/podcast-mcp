@@ -7,8 +7,7 @@ shared :data:`settings` instance instead of calling ``os.getenv`` directly.
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass, field
-from pathlib import Path
+from dataclasses import dataclass
 
 from dotenv import load_dotenv
 

@@ -8,7 +8,6 @@ from podcast_mcp.application.search import TranscriptSearch
 from podcast_mcp.infrastructure.embeddings import OpenAIEmbeddingClient
 from podcast_mcp.infrastructure.postgres import PostgresTranscriptRepository
 
-
 DEFAULT_SEARCH_LIMIT = 5
 DEFAULT_AROUND_CONTEXT_SECONDS = 60
 

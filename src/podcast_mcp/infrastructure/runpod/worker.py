@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
 import os
+from collections.abc import Iterator
 from contextlib import contextmanager
-from typing import Iterator
 
 import runpod
 
 from podcast_mcp.ingest.transcription import process_audio_url
-
 
 ENV_KEYS = {
     "TRANSCRIBE_MODEL",
@@ -49,12 +48,14 @@ def job_environment(values: dict[str, object]) -> Iterator[None]:
 
 
 def handler(job: dict[str, object]) -> dict[str, object]:
-    job_input = job.get("input") if isinstance(job.get("input"), dict) else {}
-    audio_url = job_input.get("audio_url") if isinstance(job_input, dict) else None
+    raw_input = job.get("input")
+    job_input = raw_input if isinstance(raw_input, dict) else {}
+    audio_url = job_input.get("audio_url")
     if not audio_url:
         raise ValueError("RunPod job input must include audio_url")
 
-    env = job_input.get("env") if isinstance(job_input.get("env"), dict) else {}
+    raw_env = job_input.get("env")
+    env = raw_env if isinstance(raw_env, dict) else {}
     with job_environment(env):
         transcript, _ = process_audio_url(str(audio_url), write_files=False)
 

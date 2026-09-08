@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 import argparse
-from collections import namedtuple
 import gc
 import hashlib
 import json
@@ -12,11 +11,11 @@ import threading
 import time
 import warnings
 import wave
+from collections import namedtuple
 from pathlib import Path
 from urllib.parse import urlparse
 
 from podcast_mcp.config import settings
-
 
 os.environ.setdefault("MPLCONFIGDIR", "/tmp/matplotlib")
 warnings.filterwarnings(
@@ -238,7 +237,12 @@ def wav_duration_seconds(wav_path: Path) -> float:
         return frame_count / frame_rate
 
 
-def split_wav_chunk(source_wav_path: Path, chunk_wav_path: Path, offset_seconds: float, duration_seconds: float) -> float:
+def split_wav_chunk(
+    source_wav_path: Path,
+    chunk_wav_path: Path,
+    offset_seconds: float,
+    duration_seconds: float,
+) -> float:
     started_at = time.monotonic()
     log(
         f"Creating WAV chunk {chunk_wav_path.name} "
@@ -419,7 +423,7 @@ def run_diarization(
     if not hasattr(torchaudio, "list_audio_backends"):
         torchaudio.list_audio_backends = lambda: ["soundfile"]
     if not hasattr(torchaudio, "AudioMetaData"):
-        torchaudio.AudioMetaData = namedtuple(
+        torchaudio.AudioMetaData = namedtuple(  # type: ignore[misc]
             "AudioMetaData",
             ["sample_rate", "num_frames", "num_channels", "bits_per_sample", "encoding"],
             defaults=[0, 0, 0, 0, "UNKNOWN"],
@@ -437,10 +441,8 @@ def run_diarization(
 
         torchaudio.info = torchaudio_info
 
-    from pyannote.audio.core.task import Specifications
-    from pyannote.audio.core.task import Problem
-    from pyannote.audio.core.task import Resolution
     from pyannote.audio import Pipeline
+    from pyannote.audio.core.task import Problem, Resolution, Specifications
 
     torch.serialization.add_safe_globals([torch.torch_version.TorchVersion, Specifications, Problem, Resolution])
 
@@ -676,7 +678,7 @@ Return only JSON in this format:
         raise ValueError("OpenAI response did not include output text")
 
     parsed = parse_json_object(content)
-    mapping = {}
+    mapping: dict[str, dict[str, object]] = {}
     for speaker_id in speaker_ids:
         speaker_value = parsed.get(speaker_id)
         if not isinstance(speaker_value, dict):
@@ -816,7 +818,8 @@ def process_audio_url(
     transcript_written = False
     log(
         "Starting transcription "
-        f"engine='faster-whisper' model='{model_size}' device='{device}' compute_type='{compute_type}' beam_size={beam_size} "
+        f"engine='faster-whisper' model='{model_size}' device='{device}' "
+        f"compute_type='{compute_type}' beam_size={beam_size} "
         f"condition_on_previous_text={CONDITION_ON_PREVIOUS_TEXT} "
         f"vad_filter={VAD_FILTER} no_speech_threshold={NO_SPEECH_THRESHOLD} "
         f"chunk_seconds={chunk_seconds} "
@@ -836,8 +839,8 @@ def process_audio_url(
         processing["audio_conversion_seconds"] = round(convert_audio_to_wav(audio_path, wav_path), 3)
         audio_duration_seconds = wav_duration_seconds(wav_path)
         processing["audio_duration_seconds"] = round(audio_duration_seconds, 3)
-        diarization_turns = []
-        speaker_mapping = {}
+        diarization_turns: list[dict[str, object]] = []
+        speaker_mapping: dict[str, dict[str, object]] = {}
         if chunk_seconds > 0 and audio_duration_seconds > chunk_seconds:
             log(
                 f"Processing WAV in chunks of {format_seconds(chunk_seconds)} "
@@ -914,7 +917,7 @@ def process_audio_url(
                 if isinstance(first_info, dict)
                 else lambda key, default=None: getattr(first_info, key, default)
             )
-            info = {
+            info: object = {
                 "language": info_get("language") if first_info is not None else language,
                 "language_probability": info_get("language_probability") if first_info is not None else None,
                 "duration": audio_duration_seconds,
@@ -947,21 +950,20 @@ def process_audio_url(
                 segments = align_segments_with_speakers(segments, diarization_turns)
 
         speaker_mapping = {}
-        if diarization_enabled:
-            if write_files:
-                write_json(
-                    diarization_path,
-                    {
-                        "audio_url": audio_url,
-                        "diarization_model": diarization_model,
-                        "diarization_device": diarization_device,
-                        "min_speakers": diarization_min_speakers,
-                        "max_speakers": diarization_max_speakers,
-                        "chunk_seconds": chunk_seconds,
-                        "turns": diarization_turns,
-                    },
-                )
-                log(f"Wrote diarization JSON to {diarization_path}")
+        if diarization_enabled and write_files:
+            write_json(
+                diarization_path,
+                {
+                    "audio_url": audio_url,
+                    "diarization_model": diarization_model,
+                    "diarization_device": diarization_device,
+                    "min_speakers": diarization_min_speakers,
+                    "max_speakers": diarization_max_speakers,
+                    "chunk_seconds": chunk_seconds,
+                    "turns": diarization_turns,
+                },
+            )
+            log(f"Wrote diarization JSON to {diarization_path}")
 
         if diarization_enabled and speaker_name_resolution_enabled:
             speaker_mapping_started_at = time.monotonic()

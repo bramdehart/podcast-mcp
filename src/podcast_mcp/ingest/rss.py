@@ -13,7 +13,6 @@ import psycopg
 from podcast_mcp.config import settings
 from podcast_mcp.ingest.transcript import ingest_transcript_file
 
-
 USER_AGENT = "AppleCoreMedia"
 TRANSCRIBE_MODULE = "podcast_mcp.ingest.transcription"
 RUNPOD_CLIENT_MODULE = "podcast_mcp.infrastructure.runpod.client"
@@ -70,7 +69,7 @@ def parse_duration(value: str | None) -> int | None:
 
 def parse_episode_items(xml_data: bytes) -> list[dict[str, object]]:
     root = ET.fromstring(xml_data)
-    episodes = []
+    episodes: list[dict[str, object]] = []
 
     itunes_namespace = "http://www.itunes.com/dtds/podcast-1.0.dtd"
     content_namespace = "http://purl.org/rss/1.0/modules/content/"
@@ -112,10 +111,9 @@ def parse_episode_items(xml_data: bytes) -> list[dict[str, object]]:
 
 
 def get_indexed_audio_urls(database_url: str) -> set[str]:
-    with psycopg.connect(database_url) as connection:
-        with connection.cursor() as cursor:
-            cursor.execute("SELECT audio_url FROM episodes")
-            return {row[0] for row in cursor.fetchall()}
+    with psycopg.connect(database_url) as connection, connection.cursor() as cursor:
+        cursor.execute("SELECT audio_url FROM episodes")
+        return {row[0] for row in cursor.fetchall()}
 
 
 def transcript_path_from_process(result: subprocess.CompletedProcess[bytes]) -> Path:

@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-import anyio
 import hmac
 import time
 from collections import defaultdict, deque
 from typing import Any
 
+import anyio
 from mcp.server.auth.provider import AccessToken, TokenVerifier
 from mcp.server.auth.settings import AuthSettings
 from mcp.server.fastmcp import FastMCP
@@ -14,9 +14,17 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 from podcast_mcp.config import settings
 from podcast_mcp.server.tools import (
     get_episode as get_episode_data,
+)
+from podcast_mcp.server.tools import (
     get_transcript_around_timestamp as get_transcript_around_timestamp_data,
+)
+from podcast_mcp.server.tools import (
     list_episodes as list_episodes_data,
+)
+from podcast_mcp.server.tools import (
     search_by_speaker as search_by_speaker_data,
+)
+from podcast_mcp.server.tools import (
     search_podcast_transcripts as search_podcast_transcripts_data,
 )
 
@@ -82,7 +90,7 @@ def create_mcp_server() -> FastMCP:
     token_verifier = None
 
     if bearer_token:
-        auth_settings = AuthSettings(issuer_url=public_url, resource_server_url=public_url)
+        auth_settings = AuthSettings(issuer_url=public_url, resource_server_url=public_url)  # type: ignore[arg-type]
         token_verifier = StaticBearerTokenVerifier(bearer_token)
 
     return FastMCP(
@@ -105,10 +113,7 @@ def rate_limited_app(app: ASGIApp) -> ASGIApp:
 async def run_http_mcp_server(transport: str) -> None:
     import uvicorn
 
-    if transport == "sse":
-        app = mcp.sse_app()
-    else:
-        app = mcp.streamable_http_app()
+    app = mcp.sse_app() if transport == "sse" else mcp.streamable_http_app()
 
     config = uvicorn.Config(
         rate_limited_app(app),
@@ -208,7 +213,7 @@ def main() -> None:
     if transport not in {"stdio", "sse", "streamable-http"}:
         raise SystemExit("MCP_TRANSPORT must be 'stdio', 'sse', or 'streamable-http'")
     if transport == "stdio":
-        mcp.run(transport=transport)
+        mcp.run(transport=transport)  # type: ignore[arg-type]
     else:
         anyio.run(lambda: run_http_mcp_server(transport))
 

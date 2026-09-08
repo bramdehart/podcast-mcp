@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import date, datetime
 from decimal import Decimal
 from typing import Any, Protocol
@@ -18,6 +20,15 @@ from podcast_mcp.infrastructure.embeddings import vector_literal
 
 def database_url() -> str:
     return settings.require_database_url()
+
+
+@contextmanager
+def _cursor() -> Iterator[psycopg.Cursor[Any]]:
+    with psycopg.connect(
+        database_url(),
+        row_factory=psycopg.rows.dict_row,
+    ) as connection, connection.cursor() as cursor:
+        yield cursor
 
 
 def json_value(value: Any) -> Any:
@@ -99,18 +110,17 @@ class PostgresTranscriptRepository:
     """
 
     def list_episodes(self, limit: int, offset: int) -> list[Episode]:
-        with psycopg.connect(database_url(), row_factory=psycopg.rows.dict_row) as connection:
-            with connection.cursor() as cursor:
-                cursor.execute(
-                    self.EPISODE_SELECT
-                    + """
-                    GROUP BY e.id
-                    ORDER BY e.datum DESC NULLS LAST, e.titel
-                    LIMIT %s OFFSET %s
-                    """,
-                    (limit, offset),
-                )
-                return [self._episode_from_row(row) for row in cursor.fetchall()]
+        with _cursor() as cursor:
+            cursor.execute(
+                self.EPISODE_SELECT
+                + """
+                GROUP BY e.id
+                ORDER BY e.datum DESC NULLS LAST, e.titel
+                LIMIT %s OFFSET %s
+                """,
+                (limit, offset),
+            )
+            return [self._episode_from_row(row) for row in cursor.fetchall()]
 
     def get_episode(self, episode_id: str | None = None, audio_url: str | None = None) -> Episode:
         if not episode_id and not audio_url:
@@ -119,40 +129,39 @@ class PostgresTranscriptRepository:
         where_clause = "e.id = %s" if episode_id else "e.audio_url = %s"
         value = episode_id or audio_url
 
-        with psycopg.connect(database_url(), row_factory=psycopg.rows.dict_row) as connection:
-            with connection.cursor() as cursor:
-                cursor.execute(
-                    self.EPISODE_SELECT
-                    + f"""
-                    WHERE {where_clause}
-                    GROUP BY e.id
-                    """,
-                    (value,),
-                )
-                row = cursor.fetchone()
-                if row is None:
-                    raise LookupError("Episode not found")
+        with _cursor() as cursor:
+            cursor.execute(
+                self.EPISODE_SELECT
+                + f"""
+                WHERE {where_clause}
+                GROUP BY e.id
+                """,
+                (value,),
+            )
+            row = cursor.fetchone()
+            if row is None:
+                raise LookupError("Episode not found")
 
-                cursor.execute(
-                    """
-                    SELECT speaker_id, speaker_name, speaker_confidence, evidence
-                    FROM episode_speakers
-                    WHERE episode_id = %s
-                    ORDER BY speaker_id
-                    """,
-                    (row["id"],),
+            cursor.execute(
+                """
+                SELECT speaker_id, speaker_name, speaker_confidence, evidence
+                FROM episode_speakers
+                WHERE episode_id = %s
+                ORDER BY speaker_id
+                """,
+                (row["id"],),
+            )
+            speakers = [
+                Speaker(
+                    speaker_id=str(speaker["speaker_id"]),
+                    speaker_name=speaker["speaker_name"],
+                    speaker_confidence=float(speaker["speaker_confidence"])
+                    if speaker["speaker_confidence"] is not None
+                    else None,
+                    evidence=speaker["evidence"],
                 )
-                speakers = [
-                    Speaker(
-                        speaker_id=str(speaker["speaker_id"]),
-                        speaker_name=speaker["speaker_name"],
-                        speaker_confidence=float(speaker["speaker_confidence"])
-                        if speaker["speaker_confidence"] is not None
-                        else None,
-                        evidence=speaker["evidence"],
-                    )
-                    for speaker in cursor.fetchall()
-                ]
+                for speaker in cursor.fetchall()
+            ]
 
         episode = self._episode_from_row(row)
         episode.speakers = speakers
@@ -176,21 +185,20 @@ class PostgresTranscriptRepository:
         where_sql = f"WHERE {' AND '.join(filters)}" if filters else ""
 
         embedding_literal = vector_literal(query_embedding)
-        with psycopg.connect(database_url(), row_factory=psycopg.rows.dict_row) as connection:
-            with connection.cursor() as cursor:
-                cursor.execute(
-                    self.CHUNK_SELECT
-                    + f"""
-                    , 1 - (tc.embedding <=> %s::vector) AS similarity
-                FROM transcript_chunks tc
-                JOIN episodes e ON e.id = tc.episode_id
-                {where_sql}
-                ORDER BY tc.embedding <=> %s::vector
-                LIMIT %s
-                """,
-                    [embedding_literal, *values, embedding_literal, limit],
-                )
-                return [self._chunk_from_row(row) for row in cursor.fetchall()]
+        with _cursor() as cursor:
+            cursor.execute(
+                self.CHUNK_SELECT
+                + f"""
+                , 1 - (tc.embedding <=> %s::vector) AS similarity
+            FROM transcript_chunks tc
+            JOIN episodes e ON e.id = tc.episode_id
+            {where_sql}
+            ORDER BY tc.embedding <=> %s::vector
+            LIMIT %s
+            """,
+                [embedding_literal, *values, embedding_literal, limit],
+            )
+            return [self._chunk_from_row(row) for row in cursor.fetchall()]
 
     def get_transcript_around_timestamp(
         self,
@@ -201,35 +209,38 @@ class PostgresTranscriptRepository:
         start = max(0, timestamp_seconds - context_seconds)
         end = timestamp_seconds + context_seconds
 
-        with psycopg.connect(database_url(), row_factory=psycopg.rows.dict_row) as connection:
-            with connection.cursor() as cursor:
-                cursor.execute(
-                    "SELECT id, titel AS title, datum AS published_at, audio_url, duur AS duration FROM episodes WHERE id = %s",
-                    (episode_id,),
-                )
-                episode_row = cursor.fetchone()
-                if episode_row is None:
-                    raise LookupError("Episode not found")
+        with _cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT id, titel AS title, datum AS published_at, audio_url, duur AS duration
+                FROM episodes
+                WHERE id = %s
+                """,
+                (episode_id,),
+            )
+            episode_row = cursor.fetchone()
+            if episode_row is None:
+                raise LookupError("Episode not found")
 
-                cursor.execute(
-                    """
-                    SELECT
-                        start_seconds,
-                        end_seconds,
-                        speaker_id,
-                        speaker_name,
-                        speaker_confidence,
-                        diarization_confidence,
-                        text
-                    FROM transcript_segments
-                    WHERE episode_id = %s
-                      AND end_seconds >= %s
-                      AND start_seconds <= %s
-                    ORDER BY start_seconds
-                    """,
-                    (episode_id, start, end),
-                )
-                segments = [self._segment_from_row(row) for row in cursor.fetchall()]
+            cursor.execute(
+                """
+                SELECT
+                    start_seconds,
+                    end_seconds,
+                    speaker_id,
+                    speaker_name,
+                    speaker_confidence,
+                    diarization_confidence,
+                    text
+                FROM transcript_segments
+                WHERE episode_id = %s
+                  AND end_seconds >= %s
+                  AND start_seconds <= %s
+                ORDER BY start_seconds
+                """,
+                (episode_id, start, end),
+            )
+            segments = [self._segment_from_row(row) for row in cursor.fetchall()]
 
         return TranscriptContext(
             episode=row_dict(episode_row),
@@ -264,36 +275,35 @@ class PostgresTranscriptRepository:
 
         where_sql = "WHERE " + " AND ".join(filters)
 
-        with psycopg.connect(database_url(), row_factory=psycopg.rows.dict_row) as connection:
-            with connection.cursor() as cursor:
-                if query_embedding is not None:
-                    embedding_literal = vector_literal(query_embedding)
-                    cursor.execute(
-                        self.CHUNK_SELECT
-                        + f"""
-                        , 1 - (tc.embedding <=> %s::vector) AS similarity
-                    FROM transcript_chunks tc
-                    JOIN episodes e ON e.id = tc.episode_id
-                    {where_sql}
-                    ORDER BY tc.embedding <=> %s::vector
-                    LIMIT %s
-                    """,
-                        [embedding_literal, *values, embedding_literal, limit],
-                    )
-                else:
-                    cursor.execute(
-                        self.CHUNK_SELECT
-                        + f"""
-                    FROM transcript_chunks tc
-                    JOIN episodes e ON e.id = tc.episode_id
-                    {where_sql}
-                    ORDER BY e.datum DESC NULLS LAST, tc.start_seconds
-                    LIMIT %s
-                    """,
-                        [*values, limit],
-                    )
+        with _cursor() as cursor:
+            if query_embedding is not None:
+                embedding_literal = vector_literal(query_embedding)
+                cursor.execute(
+                    self.CHUNK_SELECT
+                    + f"""
+                    , 1 - (tc.embedding <=> %s::vector) AS similarity
+                FROM transcript_chunks tc
+                JOIN episodes e ON e.id = tc.episode_id
+                {where_sql}
+                ORDER BY tc.embedding <=> %s::vector
+                LIMIT %s
+                """,
+                    [embedding_literal, *values, embedding_literal, limit],
+                )
+            else:
+                cursor.execute(
+                    self.CHUNK_SELECT
+                    + f"""
+                FROM transcript_chunks tc
+                JOIN episodes e ON e.id = tc.episode_id
+                {where_sql}
+                ORDER BY e.datum DESC NULLS LAST, tc.start_seconds
+                LIMIT %s
+                """,
+                    [*values, limit],
+                )
 
-                return [self._chunk_from_row(row) for row in cursor.fetchall()]
+            return [self._chunk_from_row(row) for row in cursor.fetchall()]
 
     @staticmethod
     def _episode_from_row(row: dict[str, Any]) -> Episode:

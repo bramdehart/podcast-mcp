@@ -8,8 +8,8 @@ import psycopg
 from psycopg.rows import dict_row
 
 from podcast_mcp.config import settings
-from podcast_mcp.ingest.rss import fetch_rss_xml, parse_episode_items
 from podcast_mcp.infrastructure.runpod.client import resolve_speaker_names_locally
+from podcast_mcp.ingest.rss import fetch_rss_xml, parse_episode_items
 
 
 def log(message: str) -> None:
@@ -173,7 +173,10 @@ def resolve_episode(
         str(metadata["description"]) if metadata.get("description") else None,
         str(metadata["podcast_description"]) if metadata.get("podcast_description") else None,
     )
-    speaker_mapping = named_mapping(resolved.get("speaker_mapping", {}))
+    resolved_mapping = resolved.get("speaker_mapping", {})
+    speaker_mapping = (
+        named_mapping(resolved_mapping) if isinstance(resolved_mapping, dict) else {}
+    )
 
     if not speaker_mapping:
         log(f"Resolved '{episode['title']}': 0 named speakers")
