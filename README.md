@@ -121,10 +121,10 @@ The assistant lists the episode speakers (`get_episode`) and reports the
 
 ## Installation
 
-Requires Python 3.12+.
+Requires Python 3.11+.
 
 ```bash
-python3.12 -m venv .venv
+python3.11 -m venv .venv
 .venv/bin/pip install -e ".[server,ingestion]"
 cp .env.example .env
 ```

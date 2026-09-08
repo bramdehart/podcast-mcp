@@ -2,10 +2,10 @@
 
 ## Setup
 
-Requires Python 3.12+.
+Requires Python 3.11+.
 
 ```bash
-python3.12 -m venv .venv
+python3.11 -m venv .venv
 .venv/bin/pip install -e ".[server,ingestion,worker,dev]"
 cp .env.example .env
 ```

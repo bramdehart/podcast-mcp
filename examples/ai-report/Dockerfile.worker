@@ -21,6 +21,6 @@ RUN apt-get update \
 
 COPY pyproject.toml .
 COPY src ./src
-RUN pip install --no-cache-dir --ignore-requires-python .[worker]
+RUN pip install --no-cache-dir .[worker]
 
 CMD ["python", "-u", "-m", "podcast_mcp.infrastructure.runpod.worker"]
