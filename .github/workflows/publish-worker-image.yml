@@ -6,7 +6,7 @@ name: Publish RunPod worker image
     branches:
       - main
     paths:
-      - Dockerfile.worker
+      - examples/ai-report/Dockerfile.worker
       - pyproject.toml
       - src/podcast_mcp/infrastructure/runpod/**
       - src/podcast_mcp/ingest/transcription.py
@@ -40,7 +40,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: Dockerfile.worker
+          file: examples/ai-report/Dockerfile.worker
           push: true
           tags: |
             ${{ env.IMAGE_NAME }}:latest

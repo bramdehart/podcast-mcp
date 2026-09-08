@@ -11,66 +11,11 @@ services:
       - "${POSTGRES_BIND_ADDRESS:-127.0.0.1}:${POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./db/migrations:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 10s
       timeout: 5s
       retries: 5
-
-  app:
-    build:
-      context: .
-      dockerfile: Dockerfile.app
-    image: podcast-mcp-app
-    profiles:
-      - tools
-    env_file:
-      - ${APP_ENV_FILE:-.env}
-    environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-podcast_mcp}:${POSTGRES_PASSWORD:-podcast_mcp}@postgres:5432/${POSTGRES_DB:-podcast_mcp}
-    depends_on:
-      postgres:
-        condition: service_healthy
-    command: ["podcast-mcp-ingest"]
-
-  scheduler:
-    build:
-      context: .
-      dockerfile: Dockerfile.app
-    image: podcast-mcp-app
-    restart: unless-stopped
-    profiles:
-      - scheduler
-    env_file:
-      - ${APP_ENV_FILE:-.env}
-    environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-podcast_mcp}:${POSTGRES_PASSWORD:-podcast_mcp}@postgres:5432/${POSTGRES_DB:-podcast_mcp}
-    depends_on:
-      postgres:
-        condition: service_healthy
-    command: ["podcast-mcp-scheduler"]
-
-  mcp:
-    build:
-      context: .
-      dockerfile: Dockerfile.app
-    image: podcast-mcp-app
-    restart: unless-stopped
-    profiles:
-      - mcp
-    env_file:
-      - ${APP_ENV_FILE:-.env}
-    environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-podcast_mcp}:${POSTGRES_PASSWORD:-podcast_mcp}@postgres:5432/${POSTGRES_DB:-podcast_mcp}
-      MCP_TRANSPORT: streamable-http
-      MCP_HOST: 0.0.0.0
-    ports:
-      - "${MCP_BIND_ADDRESS:-127.0.0.1}:${MCP_PORT:-8000}:8000"
-    depends_on:
-      postgres:
-        condition: service_healthy
-    command: ["podcast-mcp"]
 
 volumes:
   postgres_data:
