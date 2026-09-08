@@ -1,0 +1,85 @@
+# RunPod transcription worker
+
+This setup moves heavy audio processing to a RunPod Serverless worker:
+
+1. Download audio in the worker to `/tmp`.
+2. Transcribe with Faster Whisper.
+3. Run pyannote diarization.
+4. Return transcript JSON to the local client.
+5. Run speaker-name mapping locally via the OpenAI API.
+6. The local client writes `/tmp/podcast_transcript_<hash>.json`.
+
+## Local env
+
+Set locally:
+
+```env
+TRANSCRIBE_EXECUTION=runpod
+RUNPOD_API_KEY=...
+RUNPOD_ENDPOINT_ID=...
+TRANSCRIBE_MODEL=medium
+TRANSCRIBE_DEVICE=cuda
+TRANSCRIBE_COMPUTE_TYPE=float16
+TRANSCRIBE_BEAM_SIZE=1
+DIARIZATION_ENABLED=true
+DIARIZATION_DEVICE=cuda
+HUGGINGFACE_TOKEN=...
+SPEAKER_NAME_RESOLUTION_ENABLED=true
+OPENAI_API_KEY=...
+SPEAKER_NAME_MODEL=gpt-5.4-mini
+```
+
+After that, the existing RSS flow stays the same:
+
+```bash
+podcast-mcp-ingest
+```
+
+## Worker image
+
+The GitHub Actions workflow `.github/workflows/publish-worker-image.yml`
+automatically builds and pushes:
+
+```text
+ghcr.io/<github-owner>/podcast-mcp-worker:latest
+```
+
+You can start the workflow manually from GitHub Actions, or automatically by
+pushing to `main`.
+
+Then use this in RunPod:
+
+```env
+Container image=ghcr.io/<github-owner>/podcast-mcp-worker:latest
+Template=No template
+Start command=
+```
+
+You can also build and push manually (see `examples/ai-report/Dockerfile.worker`):
+
+```bash
+docker build -f examples/ai-report/Dockerfile.worker -t ghcr.io/<github-owner>/podcast-mcp-worker:latest .
+docker push ghcr.io/<github-owner>/podcast-mcp-worker:latest
+```
+
+After that, create a RunPod Serverless endpoint with this image.
+
+The worker image uses a recent PyTorch/CUDA base image because RunPod Serverless
+GPU pools can include newer GPU architectures. Older CUDA images can fail the
+RunPod fitness check with `no kernel image is available for execution on the
+device`. The RunPod image pins `torchcodec` to the PyTorch-compatible version.
+Mismatched TorchCodec/PyTorch/CUDA builds can fail at startup with missing CUDA
+runtime libraries.
+
+## Localhost callback
+
+RunPod cannot call back to your `localhost` directly: for RunPod, `localhost`
+means the worker container itself. This implementation therefore uses polling
+through the RunPod API. This also works while the rest of the app still runs
+locally.
+
+## Speaker name mapping
+
+With `SPEAKER_NAME_RESOLUTION_ENABLED=true`, `podcast-mcp-runpod` runs
+speaker-name mapping locally after RunPod completes. This uses the OpenAI API,
+so `OPENAI_API_KEY` and `SPEAKER_NAME_MODEL` must be set locally.

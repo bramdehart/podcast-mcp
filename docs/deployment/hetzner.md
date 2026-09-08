@@ -1,19 +1,24 @@
-# Hetzner deployment
+# Hetzner deployment example
 
-This server runs the database, RSS sync, transcript ingestion, embeddings, and MCP service.
-GPU transcription and diarization stay on RunPod.
+This is the deployment used by the [AI Report](https://www.aireport.nl/) demo.
+It runs the database, RSS sync, transcript ingestion, embeddings, and MCP
+service on a Hetzner VPS. GPU transcription and diarization stay on RunPod.
+
+See `examples/ai-report/docker-compose.yml` for the full service stack and
+`examples/ai-report/README.md` for setup commands.
 
 ## Services
 
 - `postgres`: Postgres with pgvector and persistent `postgres_data` volume.
 - `app`: one-off container for manual commands such as RSS sync.
-- `scheduler`: long-running container that starts `python -m podcast_mcp.ingest.rss` based on `SYNC_CRON`.
+- `scheduler`: long-running container that runs RSS sync based on `SYNC_CRON`.
+- `mcp`: the MCP HTTP service, bound to localhost and exposed through Caddy.
 
 ## Production environment
 
 Create a server-local env file, for example `.env.production`. Do not commit it.
 
-### Required on Hetzner
+### Required on the VPS
 
 ```env
 POSTGRES_DB=podcast_mcp
@@ -42,14 +47,14 @@ MCP_RATE_LIMIT_REQUESTS=60
 MCP_RATE_LIMIT_WINDOW_SECONDS=60
 ```
 
-`DATABASE_URL` is optional when running through Docker Compose. Compose builds the
-internal app database URL from `POSTGRES_DB`, `POSTGRES_USER`, and
+`DATABASE_URL` is optional when running through Docker Compose. Compose builds
+the internal app database URL from `POSTGRES_DB`, `POSTGRES_USER`, and
 `POSTGRES_PASSWORD`, using the private Docker hostname `postgres`.
 
-### Required on RunPod worker
+### Required on the RunPod worker
 
-These values belong in the RunPod endpoint environment, not on Hetzner, unless local
-transcription is explicitly enabled.
+These values belong in the RunPod endpoint environment, not on the VPS, unless
+local transcription is explicitly enabled.
 
 ```env
 TRANSCRIBE_MODEL=large-v3
@@ -88,7 +93,7 @@ Resolve missing speaker names for already-ingested episodes without rerunning
 RunPod transcription or embeddings:
 
 ```bash
-APP_ENV_FILE=.env.production docker compose --profile tools run --rm app python -m podcast_mcp.ingest.speaker_names
+APP_ENV_FILE=.env.production docker compose --profile tools run --rm app podcast-mcp-speaker-names
 ```
 
 Start the scheduler:
